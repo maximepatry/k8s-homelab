@@ -1,0 +1,128 @@
+name: Deploy
+
+# Rolling/release pipeline — manually triggered.
+# Requires the self-hosted runner on the homelab.
+# After Terraform and Ansible complete, ArgoCD is already watching the git repo
+# and will roll out any manifest changes automatically. This job waits for that
+# sync to confirm the cluster is fully converged before marking the run green.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to deploy"
+        required: true
+        default: all
+        type: choice
+        options:
+          - terraform
+          - ansible
+          - all
+      ansible_tags:
+        description: "Ansible tags (e.g. containerd, kubeadm) — blank = full playbook"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry-run (plan/check only, no changes applied)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  terraform-apply:
+    name: Terraform apply
+    runs-on: [self-hosted, homelab]
+    if: inputs.target == 'terraform' || inputs.target == 'all'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Init
+        run: terraform -chdir=terraform/proxmox init
+        env:
+          TF_VAR_proxmox_password: ${{ secrets.PROXMOX_PASSWORD }}
+
+      - name: Plan
+        run: terraform -chdir=terraform/proxmox plan -no-color -out=tfplan
+        env:
+          TF_VAR_proxmox_endpoint: ${{ secrets.PROXMOX_ENDPOINT }}
+          TF_VAR_proxmox_password: ${{ secrets.PROXMOX_PASSWORD }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+
+      - name: Apply
+        if: inputs.dry_run == 'false'
+        run: terraform -chdir=terraform/proxmox apply -auto-approve tfplan
+        env:
+          TF_VAR_proxmox_endpoint: ${{ secrets.PROXMOX_ENDPOINT }}
+          TF_VAR_proxmox_password: ${{ secrets.PROXMOX_PASSWORD }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+
+  ansible-run:
+    name: Ansible playbook
+    runs-on: [self-hosted, homelab]
+    needs: [terraform-apply]
+    if: |
+      always() &&
+      !cancelled() &&
+      (inputs.target == 'ansible' || inputs.target == 'all') &&
+      (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run playbook
+        run: |
+          CMD="ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/bootstrap.yml"
+          if [ -n "${{ inputs.ansible_tags }}" ]; then
+            CMD="$CMD --tags ${{ inputs.ansible_tags }}"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            CMD="$CMD --check --diff"
+          fi
+          $CMD
+        env:
+          ANSIBLE_FORCE_COLOR: "1"
+
+  argocd-verify:
+    name: Verify ArgoCD sync
+    runs-on: [self-hosted, homelab]
+    needs: [terraform-apply, ansible-run]
+    if: |
+      always() &&
+      !cancelled() &&
+      inputs.dry_run == 'false' &&
+      (needs.ansible-run.result == 'success' || needs.ansible-run.result == 'skipped') &&
+      (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for ArgoCD to sync all apps
+        run: |
+          export KUBECONFIG="${HOME}/.kube/config"
+          echo "Waiting up to 5 minutes for all ArgoCD apps to sync..."
+          timeout 300 bash -c '
+            until kubectl -n argocd get applications -o json \
+              | jq -e "[.items[] | select(.metadata.name != \"app-of-apps\") | .status.sync.status] | length > 0 and all(. == \"Synced\")" \
+              > /dev/null 2>&1; do
+              echo "  still waiting... ($(kubectl -n argocd get applications --no-headers 2>/dev/null | awk "{print \$2}" | sort | uniq -c | tr -s " " | sed "s/^ //"))"
+              sleep 15
+            done
+          '
+          echo "All apps synced. Checking health..."
+          kubectl -n argocd get applications
+
+      - name: Assert all apps healthy
+        run: |
+          export KUBECONFIG="${HOME}/.kube/config"
+          UNHEALTHY=$(kubectl -n argocd get applications -o json \
+            | jq -r '.items[] | select(.status.health.status != "Healthy") | .metadata.name')
+          if [ -n "$UNHEALTHY" ]; then
+            echo "Unhealthy apps: $UNHEALTHY"
+            exit 1
+          fi
+          echo "All apps are Synced and Healthy."

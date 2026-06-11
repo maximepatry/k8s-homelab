@@ -1,0 +1,10 @@
+# basic profile: skips FQCN and yaml formatting checks.
+# Focuses on correctness (wrong modules, broken loops, etc.).
+profile: basic
+
+warn_list:
+  - no-changed-when      # swapoff -a is intentionally idempotent via `when:`
+  - command-instead-of-module
+
+exclude_paths:
+  - .git/
