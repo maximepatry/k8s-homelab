@@ -1,12 +1,12 @@
 # Ansible — Cluster Bootstrap
 
-Ansible configures the OS and bootstraps Kubernetes on the three VMs. It is idempotent — safe to rerun.
+Ansible configures the OS and bootstraps Kubernetes on the three Rocky Linux 9 VMs. It is idempotent — safe to rerun.
 
 ## Prerequisites
 
 ```bash
 pip install ansible
-ansible-galaxy collection install ansible.posix community.general
+ansible-galaxy collection install ansible.posix community.general ansible.builtin
 ```
 
 ## Inventory
@@ -87,13 +87,15 @@ ansible all -m ping
 ## Key Role Details
 
 ### common
-- Disables swap permanently (removes from `/etc/fstab`)
+- Disables swap permanently (removes from `/etc/fstab`, masks `swap.target` for zram)
 - Loads `overlay` and `br_netfilter` kernel modules and persists them
 - Sets `net.ipv4.ip_forward=1` and `bridge-nf-call-iptables=1`
-- Installs `open-iscsi` and `nfs-common` — required by Longhorn
+- Installs `iscsi-initiator-utils` and `nfs-utils` — required by Longhorn
+- **Disables firewalld** — Cilium manages packet filtering via eBPF; firewalld conflicts with it
+- **Sets SELinux to permissive** — enforcing mode blocks several kubelet and container operations; permissive logs violations without blocking, useful for learning what would break
 
 ### containerd
-- Installs from Docker's apt repository
+- Adds Docker CE's `centos` yum repo (provides `containerd.io` for Rocky Linux)
 - Generates default config then patches `SystemdCgroup = true`
 - **Do not regenerate the config manually** — this setting will revert to `false` and kubelet will refuse to start
 

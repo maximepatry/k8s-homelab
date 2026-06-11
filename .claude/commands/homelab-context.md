@@ -30,7 +30,7 @@ Storage: SATA SSD on each SER5. Workers each have two virtual disks:
 | ser5-worker-1 | 192.168.1.102 | worker |
 | ser5-worker-2 | 192.168.1.103 | worker |
 
-Gateway: `192.168.1.1`. SSH user: `ubuntu`. kubeconfig is fetched to `clusters/homelab/kubeconfig` by Ansible.
+Gateway: `192.168.1.1`. SSH user: `rocky`. kubeconfig is fetched to `clusters/homelab/kubeconfig` by Ansible.
 
 ---
 
@@ -101,6 +101,15 @@ Cilium must be healthy before other components that need pod networking. If a fr
 **containerd SystemdCgroup**
 The Ansible role patches `SystemdCgroup = true` in `/etc/containerd/config.toml`. If you ever manually reinstall containerd and regenerate the config, this setting will revert to `false` and kubelet will fail to start with a cgroup driver mismatch.
 
+**SELinux is permissive, not disabled**
+Rocky Linux 9 ships with SELinux enforcing. The Ansible `common` role sets it to `permissive`. This logs violations without blocking — useful for seeing what would break. Do not set it to `disabled` (requires reboot and relabeling); `permissive` is the right homelab setting.
+
+**firewalld is disabled**
+Rocky Linux 9 enables firewalld by default. It conflicts with Cilium's eBPF packet processing. Ansible disables and stops it on all nodes. If you see dropped packets or unreachable services, verify `systemctl status firewalld` is inactive before blaming Cilium.
+
+**Package manager is dnf, not apt**
+All package operations use `dnf`. Kubernetes packages are pinned via `dnf versionlock` (not `apt-mark hold`). containerd comes from Docker CE's centos yum repo.
+
 ---
 
 ## Troubleshooting Cheatsheet
@@ -113,9 +122,9 @@ kubectl get nodes -o wide
 
 ### Node-level SSH
 ```bash
-ssh ubuntu@192.168.1.101   # control-plane
-ssh ubuntu@192.168.1.102   # worker-1
-ssh ubuntu@192.168.1.103   # worker-2
+ssh rocky@192.168.1.101   # control-plane
+ssh rocky@192.168.1.102   # worker-1
+ssh rocky@192.168.1.103   # worker-2
 ```
 
 ### Cilium

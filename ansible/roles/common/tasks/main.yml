@@ -1,22 +1,16 @@
 ---
-- name: Update apt cache
-  apt:
-    update_cache: true
-    cache_valid_time: 3600
-
 - name: Install base packages
-  apt:
+  dnf:
     name:
       - curl
-      - apt-transport-https
       - ca-certificates
-      - gnupg
-      - lsb-release
-      - open-iscsi   # required by Longhorn
-      - nfs-common   # required by Longhorn
+      - gnupg2
+      - iscsi-initiator-utils   # required by Longhorn
+      - nfs-utils               # required by Longhorn
+      - iproute-tc              # required by Cilium
     state: present
 
-- name: Enable iscsid
+- name: Enable and start iscsid
   systemd:
     name: iscsid
     enabled: true
@@ -31,6 +25,16 @@
     path: /etc/fstab
     regexp: '\sswap\s'
     state: absent
+
+- name: Disable zram-generator (Rocky Linux 9 swap via zram)
+  systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+    masked: true
+  loop:
+    - swap.target
+  ignore_errors: true
 
 - name: Load required kernel modules
   modprobe:
@@ -57,3 +61,22 @@
     - { key: net.bridge.bridge-nf-call-iptables,  value: "1" }
     - { key: net.bridge.bridge-nf-call-ip6tables, value: "1" }
     - { key: net.ipv4.ip_forward,                 value: "1" }
+
+# firewalld is enabled by default on Rocky — disable it; Cilium manages eBPF rules
+- name: Disable firewalld
+  systemd:
+    name: firewalld
+    enabled: false
+    state: stopped
+  ignore_errors: true
+
+- name: Set SELinux to permissive
+  selinux:
+    policy: targeted
+    state: permissive
+
+- name: Persist SELinux permissive
+  replace:
+    path: /etc/selinux/config
+    regexp: '^SELINUX=enforcing'
+    replace: 'SELINUX=permissive'

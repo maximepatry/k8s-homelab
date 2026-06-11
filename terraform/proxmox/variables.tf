@@ -27,9 +27,9 @@ variable "ssh_public_key" {
 }
 
 variable "vm_template" {
-  description = "Proxmox template name to clone (Ubuntu 24.04 cloud image)"
+  description = "Proxmox template name to clone (Rocky Linux 9 cloud image)"
   type        = string
-  default     = "ubuntu-2404-cloud"
+  default     = "rocky9-cloud"
 }
 
 variable "nodes" {

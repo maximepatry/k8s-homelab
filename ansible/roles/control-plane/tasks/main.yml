@@ -16,20 +16,20 @@
 
 # skip-phases=addon/kube-proxy because Cilium replaces kube-proxy
 
-- name: Create .kube directory for ubuntu user
+- name: Create .kube directory for rocky user
   file:
-    path: /home/ubuntu/.kube
+    path: /home/rocky/.kube
     state: directory
-    owner: ubuntu
-    group: ubuntu
+    owner: rocky
+    group: rocky
 
 - name: Copy admin kubeconfig
   copy:
     src: /etc/kubernetes/admin.conf
-    dest: /home/ubuntu/.kube/config
+    dest: /home/rocky/.kube/config
     remote_src: true
-    owner: ubuntu
-    group: ubuntu
+    owner: rocky
+    group: rocky
     mode: "0600"
 
 - name: Fetch kubeconfig to local machine

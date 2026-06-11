@@ -1,32 +1,32 @@
 ---
-- name: Add Kubernetes apt key
-  apt_key:
-    url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key"
-    state: present
-
-- name: Add Kubernetes apt repository
-  apt_repository:
-    repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
-    state: present
-    filename: kubernetes
+- name: Add Kubernetes repo
+  copy:
+    dest: /etc/yum.repos.d/kubernetes.repo
+    content: |
+      [kubernetes]
+      name=Kubernetes
+      baseurl=https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/rpm/
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/rpm/repodata/repomd.xml.key
+      exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
 
 - name: Install kubeadm, kubelet, kubectl
-  apt:
+  dnf:
     name:
-      - "kubelet"
-      - "kubeadm"
-      - "kubectl"
+      - kubelet
+      - kubeadm
+      - kubectl
     state: present
-    update_cache: true
+    disable_excludes: kubernetes
 
-- name: Hold kubeadm, kubelet, kubectl at current version
-  dpkg_selections:
-    name: "{{ item }}"
-    selection: hold
+- name: Hold kubeadm, kubelet, kubectl (dnf versionlock)
+  command: dnf versionlock add {{ item }}
   loop:
     - kubelet
     - kubeadm
     - kubectl
+  changed_when: false
 
 - name: Enable kubelet
   systemd:

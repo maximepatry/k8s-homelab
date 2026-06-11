@@ -51,7 +51,7 @@ resource "proxmox_virtual_environment_vm" "worker" {
     }
     user_account {
       keys     = [var.ssh_public_key]
-      username = "ubuntu"
+      username = "rocky"
     }
   }
 

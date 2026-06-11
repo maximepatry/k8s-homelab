@@ -15,12 +15,15 @@ kubernetes_version: "1.32"
 
 ```bash
 # SSH into control plane
-ssh ubuntu@192.168.1.101
+ssh rocky@192.168.1.101
+
+# Update the repo to the new minor version (already done via group_vars + Ansible)
+# Or manually edit /etc/yum.repos.d/kubernetes.repo baseurl to v1.32
 
 # Upgrade kubeadm
-sudo apt-get update
-sudo apt-get install -y kubeadm=1.32.*
-sudo apt-mark hold kubeadm
+sudo dnf install -y --disableexcludes=kubernetes kubeadm-1.32.*
+sudo dnf versionlock delete kubeadm
+sudo dnf versionlock add kubeadm
 
 # Verify
 kubeadm version
@@ -32,8 +35,9 @@ sudo kubeadm upgrade plan
 sudo kubeadm upgrade apply v1.32.x
 
 # Upgrade kubelet and kubectl
-sudo apt-get install -y kubelet=1.32.* kubectl=1.32.*
-sudo apt-mark hold kubelet kubectl
+sudo dnf install -y --disableexcludes=kubernetes kubelet-1.32.* kubectl-1.32.*
+sudo dnf versionlock delete kubelet kubectl
+sudo dnf versionlock add kubelet kubectl
 sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 ```
@@ -45,10 +49,10 @@ sudo systemctl restart kubelet
 kubectl drain ser5-worker-1 --ignore-daemonsets --delete-emptydir-data
 
 # SSH into worker
-ssh ubuntu@192.168.1.102
-sudo apt-get update
-sudo apt-get install -y kubeadm=1.32.* kubelet=1.32.* kubectl=1.32.*
-sudo apt-mark hold kubeadm kubelet kubectl
+ssh rocky@192.168.1.102
+sudo dnf install -y --disableexcludes=kubernetes kubeadm-1.32.* kubelet-1.32.* kubectl-1.32.*
+sudo dnf versionlock delete kubeadm kubelet kubectl
+sudo dnf versionlock add kubeadm kubelet kubectl
 sudo kubeadm upgrade node
 sudo systemctl daemon-reload
 sudo systemctl restart kubelet
@@ -66,7 +70,7 @@ Repeat for `ser5-worker-2`.
 Certificates created by kubeadm expire after 1 year. Check expiry:
 
 ```bash
-ssh ubuntu@192.168.1.101
+ssh rocky@192.168.1.101
 sudo kubeadm certs check-expiration
 ```
 
@@ -135,7 +139,7 @@ kubectl uncordon <node>
 kubeadm clusters store all cluster state in etcd on the control plane.
 
 ```bash
-ssh ubuntu@192.168.1.101
+ssh rocky@192.168.1.101
 
 sudo ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-backup-$(date +%Y%m%d).db \
   --endpoints=https://127.0.0.1:2379 \

@@ -35,30 +35,32 @@ pveum aclmod / -user terraform@pve -role TerraformProv
 
 Use this user + password in `terraform.tfvars`.
 
-## 3. Create the Ubuntu Cloud-Init Template
+## 3. Create the Rocky Linux 9 Cloud-Init Template
 
 Terraform clones VMs from a template. This template must exist on **each Proxmox node** that will host a VM (all three nodes in this setup).
 
 Run on each Proxmox host:
 
 ```bash
-# Download Ubuntu 24.04 cloud image
-wget https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+# Download Rocky Linux 9 generic cloud image
+wget https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2
 
-# Install qemu-guest-agent and cloud-init tooling into the image
+# Install qemu-guest-agent into the image
 apt install -y libguestfs-tools
-virt-customize -a noble-server-cloudimg-amd64.img --install qemu-guest-agent,curl
+virt-customize -a Rocky-9-GenericCloud-Base.latest.x86_64.qcow2 \
+  --install qemu-guest-agent \
+  --run-command 'systemctl enable qemu-guest-agent'
 
 # Create VM that will become the template (ID 9000, adjust if taken)
 qm create 9000 \
-  --name ubuntu-2404-cloud \
+  --name rocky9-cloud \
   --memory 2048 \
   --cores 2 \
   --net0 virtio,bridge=vmbr0 \
   --agent enabled=1
 
 # Import the cloud image as disk
-qm importdisk 9000 noble-server-cloudimg-amd64.img local-lvm
+qm importdisk 9000 Rocky-9-GenericCloud-Base.latest.x86_64.qcow2 local-lvm
 
 # Attach disk and configure boot
 qm set 9000 \
@@ -68,7 +70,8 @@ qm set 9000 \
   --ide2 local-lvm:cloudinit \
   --serial0 socket \
   --vga serial0 \
-  --ipconfig0 ip=dhcp
+  --ipconfig0 ip=dhcp \
+  --ciuser rocky
 
 # Add template tag (used by Terraform data source to find it)
 qm set 9000 --tags template
@@ -78,6 +81,8 @@ qm template 9000
 ```
 
 Verify with: `qm list` — VM 9000 should show as template.
+
+> The default SSH user on Rocky Linux cloud images is `rocky`, not `root`. Ansible and Terraform are configured for this user.
 
 ## 4. (Optional) Proxmox Cluster
 

@@ -3,4 +3,4 @@ proxmox_username     = "terraform@pve"
 proxmox_password     = "changeme"
 proxmox_tls_insecure = true
 ssh_public_key       = "ssh-ed25519 AAAA... you@host"
-vm_template          = "ubuntu-2404-cloud"
+vm_template          = "rocky9-cloud"
