@@ -1,0 +1,16 @@
+---
+- name: Check if node is already joined
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Join cluster
+  command: "{{ hostvars['localhost']['kubeadm_join_command'] }}"
+  when: not kubelet_conf.stat.exists
+
+- name: Label node as worker
+  command: >
+    kubectl --kubeconfig /home/ubuntu/.kube/config
+    label node {{ inventory_hostname }} node-role.kubernetes.io/worker=worker --overwrite
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  become: false

@@ -1,0 +1,8 @@
+kubernetes_version: "1.31"
+containerd_version: "1.7.*"
+pod_cidr: "10.244.0.0/16"
+service_cidr: "10.96.0.0/12"
+cluster_name: homelab
+
+# Cilium replaces kube-proxy — set to false
+kube_proxy_enabled: false

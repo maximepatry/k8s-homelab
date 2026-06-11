@@ -1,0 +1,17 @@
+---
+- name: Common setup on all nodes
+  hosts: k8s_cluster
+  roles:
+    - common
+    - containerd
+    - kubeadm
+
+- name: Initialize control plane
+  hosts: control_plane
+  roles:
+    - control-plane
+
+- name: Join workers
+  hosts: workers
+  roles:
+    - worker
