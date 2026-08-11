@@ -30,9 +30,13 @@ CONFDIR_LIVE="/tmp/dnsmasq.d"
 echo "==> Installing dnsmasq-full (adds TFTP support) if not already present..."
 ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "opkg update && opkg install dnsmasq-full || true"
 
-echo "==> Fetching the iPXE boot binary (ipxe.efi, ~1MB - UEFI targets only)..."
+echo "==> Fetching the iPXE boot binary (snponly.efi, ~1MB - UEFI x86_64 targets)..."
+# snponly.efi (not ipxe.efi) - reuses the UEFI firmware's own NIC driver
+# (Simple Network Protocol) instead of iPXE's bundled native drivers,
+# which is the more reliable choice when we don't know if iPXE has a
+# native driver for this exact NIC (Realtek PCIe GBE here).
 ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "mkdir -p /www/ipxe && \
-  wget -O /www/ipxe/ipxe.efi http://boot.ipxe.org/ipxe.efi"
+  wget -O /www/ipxe/ipxe.efi http://boot.ipxe.org/x86_64-efi/snponly.efi"
 
 echo "==> Uploading boot.ipxe (persistent, served by uhttpd from /www)..."
 ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "mkdir -p /www && cat > /www/boot.ipxe" < "$SCRIPT_DIR/boot.ipxe"
