@@ -16,6 +16,9 @@ secrets/
 # Helm
 charts/*.tgz
 
+# Proxmox netboot images (generated locally, too big for git)
+bare-metal/proxmox/netboot/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -32,6 +32,10 @@ Each machine runs **Proxmox VE** as the hypervisor. Kubernetes runs inside VMs p
 
 ```
 .
+├── bare-metal/             # PXE provisioning via a GL.iNet Opal (Rocky kickstart + Proxmox auto-install)
+│   ├── router/             # GL.iNet Opal config (dnsmasq DHCP/TFTP + iPXE chainload)
+│   ├── kickstart/          # Rocky Linux 9 kickstart(s) for bare-metal nodes
+│   └── proxmox/            # Proxmox answer file(s) + generated netboot images (gitignored)
 ├── terraform/proxmox/      # Provision VMs on Proxmox
 ├── ansible/                # Bootstrap OS and kubeadm
 │   ├── inventory/
@@ -45,6 +49,17 @@ Each machine runs **Proxmox VE** as the hypervisor. Kubernetes runs inside VMs p
 ├── monitoring/             # Observability stack
 └── docs/                   # Detailed runbooks
 ```
+
+> **Note**: this repo's stack assumes Proxmox VE on every node with K8s running in
+> VMs. The actual current setup diverges: `host1` and `host3` run Proxmox
+> (`host3` doubles as media server + a disposable k8s sandbox for cert
+> practice); `host2` is bare-metal Rocky Linux (no hypervisor). Both paths are
+> provisioned via [`bare-metal/`](bare-metal/) - kickstart for `host2`, the
+> official Proxmox auto-installer for `host3`/`host1`. Terraform/Ansible below
+> target the Proxmox-VM path and should work as-is once `host1`/`host3` are up
+> — `host2` still needs a decision on how it joins the cluster as a bare-metal
+> kubeadm node (Ansible would need a conditional path for it, or it stays
+> outside the Terraform-provisioned VM fleet entirely).
 
 ## Getting Started
 
@@ -123,6 +138,7 @@ See [`docs/networking.md`](docs/networking.md) for MetalLB IP pool and Cilium co
 
 | Doc | Contents |
 |-----|----------|
+| [`bare-metal/README.md`](bare-metal/README.md) | PXE/kickstart provisioning for bare-metal nodes via the GL.iNet Opal |
 | [`docs/architecture.md`](docs/architecture.md) | Full architecture diagrams |
 | [`docs/proxmox-setup.md`](docs/proxmox-setup.md) | Manual Proxmox prep steps |
 | [`docs/terraform.md`](docs/terraform.md) | Terraform variable reference |

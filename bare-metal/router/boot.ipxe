@@ -1,0 +1,40 @@
+#!ipxe
+
+# Provisioning boot menu, dispatched by MAC address.
+# Keep the MAC list in sync with hosts.csv.
+#
+# host1 (Proxmox) has NO case here on purpose - it's excluded from the
+# Rocky pipeline, so any PXE attempt from it lands in :unknown below
+# instead of silently wiping it.
+#
+# host3 (also Proxmox) boots a vmlinuz/initrd generated locally with
+# `proxmox-auto-install-assistant prepare-iso ... --pxe` (the official
+# Rocky mirror obviously doesn't have these - Proxmox doesn't publish
+# pre-split netboot images). They're too big for the Opal's flash, so
+# they live on a USB drive mounted at /www/proxmox on the Opal itself -
+# see router/deploy-opal.sh and proxmox/answer-host3.toml.
+
+set repo_base https://raw.githubusercontent.com/maximepatry/k8s-homelab/main/bare-metal
+set rocky_base https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os
+set opal_base http://10.10.10.1
+
+iseq ${mac} e8:ff:1e:d8:a0:d0 && goto host2 ||
+iseq ${mac} 00:16:96:ee:1e:4d && goto host3 ||
+goto unknown
+
+:host2
+kernel ${rocky_base}/images/pxeboot/vmlinuz inst.ks=${repo_base}/kickstart/ks-host2.cfg inst.repo=${rocky_base} ip=dhcp inst.text
+initrd ${rocky_base}/images/pxeboot/initrd.img
+boot
+
+:host3
+# The answer.toml URL is NOT passed here - it's baked into this specific
+# initrd at build time via `prepare-iso --fetch-from http --url ...`.
+kernel ${opal_base}/proxmox/vmlinuz ro ramdisk_size=16777216 rw splash=silent proxmox-start-auto-installer
+initrd ${opal_base}/proxmox/initrd.img
+boot
+
+:unknown
+echo Unrecognized MAC: ${mac}
+echo Dropping to iPXE shell.
+shell

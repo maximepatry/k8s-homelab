@@ -1,0 +1,31 @@
+# Answer file for host3 (Proxmox VE), consumed by the official automated
+# installer: https://pve.proxmox.com/wiki/Automated_Installation
+#
+# No plaintext secret in here on purpose:
+#   - root_password_hashed: generate with `openssl passwd -6` and paste
+#     the hash below (never the plaintext password).
+#   - root_ssh_keys: your SSH public key - same key used in the Rocky
+#     kickstarts. Lets you skip password login entirely after install.
+
+[global]
+keyboard = "en-us"
+country = "us"
+timezone = "America/Toronto"
+fqdn = "host3.lab.local"
+mailto = "maxime.patry.01@gmail.com"
+root_password_hashed = "$6$WET0g/bULEILV0Mr$cvSUOYcSLZKBD3d2iggR.obi0IDcnYIVdkEiuSqfIQgjWLdGuus1d4w83jBf/1xKYoIrJse0lxlVXwrn2A11I1"
+root_ssh_keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKpih8rbjXSgYqOgkYqIyrIsYshVFByU+uEazsTLDJpL foo@homelab"
+]
+
+[network]
+source = "from-answer"
+cidr = "10.10.10.30/24"
+gateway = "10.10.10.1"
+dns = "1.1.1.1"
+
+[disk-setup]
+filesystem = "ext4"
+# Confirmed via `lsblk -d -o NAME,SIZE,MODEL` from Omarchy (still on host3
+# at the time) - nvme0n1 is the physical disk, zram is just in-RAM swap.
+disk_list = ["nvme0n1"]

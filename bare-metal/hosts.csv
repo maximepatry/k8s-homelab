@@ -1,0 +1,6 @@
+hostname,mac,ip
+# host1 = Proxmox, hors pipeline Rocky - volontairement absent d'ici
+# host3 = Proxmox aussi (voir bare-metal/proxmox/) - reservation IP gardee ici,
+# mais plus de kickstart Rocky pour ce host
+host2,e8:ff:1e:d8:a0:d0,10.10.10.20
+host3,00:16:96:ee:1e:4d,10.10.10.30
