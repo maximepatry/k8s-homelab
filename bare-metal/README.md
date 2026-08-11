@@ -3,42 +3,26 @@
 Provisioning automatisé du homelab sur mini PC, via un GL.iNet Opal
 (GL-SFT1200) en réseau de provisioning isolé, sans clé USB.
 
-Fleet actuelle :
-
-- **host1** - Proxmox, hors pipeline (voir "Hosts exclus" plus bas) - installé
-  manuellement avant ce projet
-- **host2** - Rocky Linux 9, provisionné via kickstart (ce pipeline)
-- **host3** - Proxmox VE (Ryzen 7 5800H / 32 Go - media server + sandbox k8s
-  pour certif), provisionné via l'auto-installer officiel Proxmox (voir
-  "Proxmox (host3)" plus bas)
+Fleet actuelle : **host1, host2, host3 - tous en Rocky Linux 9**, via
+kickstart. Simplifié depuis une approche mixte Proxmox/Rocky qui s'est
+avérée plus fragile (installeur Proxmox plus gros, dépendance à une clé
+USB sur l'Opal, etc.) - Rocky/Anaconda est plus simple et plus fiable à
+netbooter.
 
 ## Comment ça marche
 
 1. L'Opal est reconfiguré en routeur isolé (LAN `10.10.10.0/24`, WAN uplinké
    vers le réseau domestique pour l'accès internet pendant l'install).
-2. host2 et host3 bootent en PXE (à activer une fois dans chaque BIOS/UEFI).
+2. Le host boote en PXE (à activer dans son BIOS/UEFI).
 3. `dnsmasq` sur l'Opal reconnaît chaque mini PC par adresse MAC
    (réservations statiques dans `router/dnsmasq-provisioning.conf`,
    source de vérité : `hosts.csv`) et chaîne vers iPXE.
-4. iPXE (`router/boot.ipxe`) route par MAC :
-   - **host2** → kernel/initrd Rocky + kickstart, servis en HTTPS depuis le
-     mirror officiel Rocky et ce repo GitHub - rien de volumineux stocké sur
-     les 128MB de flash de l'Opal.
-   - **host3** → kernel/initrd Proxmox, générés localement et servis depuis
-     une clé USB branchée sur l'Opal (trop gros pour la flash interne).
-5. L'installeur (Anaconda pour Rocky, l'auto-installer Proxmox pour host3)
-   fait le partitionnement, hostname, IP statique, etc. selon le
-   kickstart/answer file correspondant.
-
-## Hosts exclus du pipeline
-
-**host1 (Proxmox)** n'a volontairement aucune entrée dans `hosts.csv`,
-`router/dnsmasq-provisioning.conf` ni `router/boot.ipxe`. S'il tente un
-PXE boot par accident, il tombe dans le cas `:unknown` de `boot.ipxe`
-(shell iPXE, pas d'install) au lieu de se faire écraser. Si tu veux plus
-tard lui donner quand même une IP fixe sur ce subnet sans le brancher au
-pipeline kickstart, ajoute juste une ligne `dhcp-host=...` dans
-`dnsmasq-provisioning.conf` - pas de case correspondante dans `boot.ipxe`.
+4. iPXE (`router/boot.ipxe`) route par MAC vers le bon kickstart, puis va
+   chercher le kernel/initrd Rocky et le kickstart directement en HTTPS
+   (mirror officiel Rocky + ce repo GitHub) - rien de volumineux stocké
+   sur les 128MB de flash de l'Opal, aucune clé USB nécessaire.
+5. Anaconda installe selon le kickstart correspondant : partitionnement,
+   hostname, IP statique, paquets, post-install.
 
 ## Après une install réussie : retirer le host du dispatch PXE
 
@@ -48,128 +32,46 @@ réseau que si le disque ne fournit aucun bootloader valide (ou si tu forces
 un boot réseau ponctuel, ex. `efibootmgr -n`). Mais `boot.ipxe` n'a aucune
 protection "skip si déjà installé" : si un host retombe un jour sur PXE
 (ordre de boot mal configuré, disque en panne, etc.), il se refait wiper
-sans prévenir.
+sans prévenir. C'est exactement ce qui est arrivé à host2 (boucle
+install/reboot/reinstall) avant qu'on corrige son ordre de boot BIOS.
 
-Une fois qu'un host (host2, host3, ...) est confirmé opérationnel, retire
-son entrée du pipeline - même traitement que host1. Deux options :
+Une fois qu'un host est confirmé opérationnel, retire son entrée du
+pipeline. Deux options :
 
 - **Supprimer** la ligne `dhcp-host=...` et le bloc `iseq .../:hostX` -
   plus propre si le host part pour de bon.
-- **Commenter** (`#` devant la ligne `dhcp-host=...`, et devant la ligne
+- **Commenter** (`#` devant la ligne `dhcp-host=...` dans
+  `dnsmasq-provisioning.conf`, et devant la ligne
   `iseq ${mac} ... && goto hostX ||` dans `boot.ipxe`) - recommandé si tu
   comptes réactiver plus tard : ça évite de retaper/retrouver la MAC, tu
-  décommentes juste les deux lignes. Le bloc `:hostX` (kernel/initrd/boot)
-  peut rester tel quel dans les deux cas - une fois que rien ne saute
-  dessus (`goto hostX`), il est inerte.
-
-  Exemple dans `boot.ipxe` :
-  ```
-  # iseq ${mac} e8:ff:1e:d8:a0:d0 && goto host2 ||
-  iseq ${mac} 00:16:96:ee:1e:4d && goto host3 ||
-  goto unknown
-  ```
+  décommentes juste la ligne. Le bloc `:hostX` (kernel/initrd/boot) peut
+  rester tel quel dans les deux cas - une fois que rien ne saute dessus
+  (`goto hostX`), il est inerte. C'est l'approche utilisée pour host2 en ce
+  moment (déjà installé, dispatch commenté dans `boot.ipxe` uniquement -
+  sa réservation `dhcp-host` reste active puisque c'est juste une IP pin,
+  pas un déclencheur PXE).
 
 Dans les deux cas, relance `./router/deploy-opal.sh <ip-de-l-opal>` pour
 pousser le changement. Le host tombera alors dans le cas `:unknown` (shell
 iPXE, pas d'install) s'il retente un PXE boot par accident.
 
-## Proxmox (host3)
-
-Contrairement à Rocky, Proxmox ne publie pas de vmlinuz/initrd netboot
-prêts à l'emploi - il faut les générer soi-même à partir de l'ISO officiel
-avec `proxmox-auto-install-assistant`, via un conteneur Debian (OrbStack
-sur le Mac).
-
-Proxmox VE est en 9.x depuis un moment, basé sur **Debian 13 "Trixie"**
-(pas Bookworm/8.x) - télécharge la dernière ISO depuis
-[proxmox.com/downloads](https://www.proxmox.com/en/downloads/proxmox-virtual-environment/)
-et dépose-la dans `bare-metal/proxmox/netboot/` avant de lancer le
-conteneur (c'est ce dossier qui est monté sur `/work`) :
-
-```bash
-cd bare-metal/proxmox
-mkdir -p netboot   # gitignored - c'est là que l'ISO téléchargée doit aller
-# --platform linux/amd64 est nécessaire sur Mac Apple Silicon - Proxmox ne
-# publie ses paquets qu'en amd64, pas en arm64 (OrbStack émule via Rosetta).
-docker run -it --rm --platform linux/amd64 -v "$(pwd)/netboot":/work debian:trixie bash
-
-# --- dans le conteneur ---
-apt update && apt install -y wget gnupg
-wget https://enterprise.proxmox.com/debian/proxmox-release-trixie.gpg -O /usr/share/keyrings/proxmox-release-trixie.gpg
-echo "deb [signed-by=/usr/share/keyrings/proxmox-release-trixie.gpg] http://download.proxmox.com/debian/pve trixie pve-no-subscription" > /etc/apt/sources.list.d/pve-install-repo.list
-apt update && apt install -y proxmox-auto-install-assistant
-
-cd /work
-ls   # confirme le nom exact de l'ISO téléchargée avant de continuer
-proxmox-auto-install-assistant prepare-iso proxmox-ve_9.x-y.iso \
-  --fetch-from http \
-  --url https://raw.githubusercontent.com/maximepatry/k8s-homelab/main/bare-metal/proxmox/answer-host3.toml \
-  --output proxmox-ve-auto.iso
-
-# `--pxe` n'est pas dispo sur toutes les versions du paquet - on extrait
-# vmlinuz/initrd.img directement de l'ISO modifiée à la place, ça marche
-# peu importe la version.
-apt install -y libarchive-tools
-bsdtar -xf proxmox-ve-auto.iso -C /work boot/linux26 boot/initrd.img
-mv /work/boot/linux26 /work/vmlinuz
-mv /work/boot/initrd.img /work/initrd.img
-rmdir /work/boot
-```
-
-Remplace `proxmox-ve_9.x-y.iso` par le nom réel du fichier téléchargé
-(vérifié via `ls` ci-dessus). `--url` pointe vers GitHub où
-`answer-host3.toml` doit déjà être accessible en HTTPS au moment du netboot
-(donc poussé sur `main` avant de tester host3, même si tu génères l'ISO
-avant) - le contenu du fichier au moment du `prepare-iso` n'a pas besoin
-d'être exact, seule l'URL est embarquée.
-
-Ça produit `vmlinuz` + `initrd.img` directement dans
-`bare-metal/proxmox/netboot/` sur le Mac (grâce au volume monté). L'URL de
-l'answer file est embarquée dans l'initrd à ce moment-là (pas passée au
-boot comme `inst.ks=` pour Rocky) - donc un answer file différent par host
-Proxmox veut dire un initrd différent par host.
-
-Avant de lancer :
-1. Remplis `proxmox/answer-host3.toml` : hash de mot de passe root
-   (`openssl passwd -6`, jamais le mot de passe en clair), ta clé SSH
-   publique, et `disk_list` - fait (`nvme0n1`, confirmé via `lsblk` depuis
-   Omarchy encore installé sur host3).
-2. Génère `vmlinuz`/`initrd.img` comme ci-dessus.
-3. Formate une clé USB en exFAT depuis le Mac (Disk Utility - pas d'ext4
-   natif sur macOS, et exFAT évite la limite 4GB de FAT32) et copie les
-   deux fichiers dessus directement - pas de transfert réseau pour ces
-   gros fichiers.
-4. Branche cette clé dans le port USB de l'Opal, puis lance
-   `./router/deploy-opal.sh <ip-de-l-opal>` - le script installe le
-   support USB/exFAT sur l'Opal (`kmod-usb-storage`, `kmod-fs-exfat`,
-   `block-mount`), monte la clé sur `/www/proxmox` (persistant via
-   `fstab`/uci), et vérifie que les deux fichiers y sont.
-5. Active le PXE boot sur host3 - `boot.ipxe` route déjà sa MAC vers
-   `http://10.10.10.1/proxmox/vmlinuz` + `proxmox-start-auto-installer`.
-
 ## Structure
 
-- `hosts.csv` - mapping hostname / MAC / IP pour host2 et host3
+- `hosts.csv` - mapping hostname / MAC / IP pour les 3 hosts
 - `router/dnsmasq-provisioning.conf` - DHCP + réservations + chainload iPXE
 - `router/boot.ipxe` - menu de boot iPXE, dispatch par MAC
-- `router/deploy-opal.sh` - déploie la config + (si présents) les fichiers
-  netboot Proxmox sur l'Opal via SSH
-- `kickstart/ks-host2.cfg` - kickstart Rocky pour host2
-- `proxmox/answer-host3.toml` - answer file Proxmox pour host3
-- `proxmox/netboot/` - `vmlinuz`/`initrd.img` générés localement (gitignored)
+- `router/deploy-opal.sh` - déploie la config sur l'Opal via SSH
+- `kickstart/ks-host{1,2,3}.cfg` - un kickstart Rocky par host
 
 ## À faire avant de lancer
 
-- Ce dossier vit dans le repo `k8s-homelab` (sous `bare-metal/`, pas à la
-  racine) - `router/boot.ipxe` pointe vers
-  `raw.githubusercontent.com/maximepatry/k8s-homelab/main/bare-metal/...` -
-  fait.
-- Remplacer la clé SSH placeholder dans `kickstart/ks-host2.cfg` et dans
-  `proxmox/answer-host3.toml`
-- Remplir `disk_list` dans `proxmox/answer-host3.toml` (voir section
-  Proxmox ci-dessus)
+- Remplacer la clé SSH placeholder dans chaque `kickstart/ks-hostX.cfg`
+  si tu changes de clé (actuellement déjà remplie avec la clé utilisée
+  pour host2)
 - Reconfigurer le LAN de l'Opal en `10.10.10.1/24` (LuCI ou `uci`) - fait
-- Activer le boot PXE dans le BIOS/UEFI de host2 et host3
+- Activer le boot PXE dans le BIOS/UEFI de chaque host, et vérifier que le
+  disque local reste prioritaire dans l'ordre de boot une fois l'install
+  terminée (sinon boucle de réinstall - voir section précédente)
 
 ## Déploiement
 
@@ -178,9 +80,19 @@ Avant de lancer :
 ```
 
 Le script vérifie l'espace disque libre sur l'Opal, installe `dnsmasq-full`
-si besoin, récupère le binaire iPXE, et pousse la config + `boot.ipxe`.
+si besoin, récupère le binaire iPXE (`snponly.efi`, build UEFI natif - voir
+note ci-dessous), et pousse la config + `boot.ipxe`.
 
-**Note firmware** : sur ce GL-SFT1200, `confdir` est réglé sur
+**Note UEFI vs BIOS legacy** : tous les hosts ici bootent en UEFI pur
+(confirmé via leurs entrées `efibootmgr` type `UEFI: PXE IPv4 ...`). On
+sert donc `snponly.efi` (build iPXE natif UEFI, réutilise le driver réseau
+déjà initialisé par le firmware) plutôt que `undionly.kpxe` (BIOS legacy) -
+ce dernier se télécharge très bien par TFTP mais un firmware UEFI ne peut
+pas l'exécuter, et retombe silencieusement sur l'entrée de boot suivante
+sans afficher d'erreur. C'est ce qui a fait perdre pas mal de temps sur le
+debug de host3 au départ.
+
+**Note firmware dnsmasq** : sur ce GL-SFT1200, `confdir` est réglé sur
 `/tmp/dnsmasq.d` (tmpfs, effacé à chaque reboot). Le script garde donc la
 copie de référence dans `/etc/dnsmasq.d/provisioning.conf` (persistant) et
 la remiroir dans `/tmp/dnsmasq.d` à chaque démarrage via un hook

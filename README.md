@@ -10,14 +10,16 @@ A self-hosted Kubernetes cluster running on bare-metal mini PCs, managed entirel
 | `ser5-worker-1` | AMD Ryzen 5500U | 10 vCPU | 28 GB | Worker |
 | `ser5-worker-2` | AMD Ryzen 5500U | 10 vCPU | 28 GB | Worker |
 
-Each machine runs **Proxmox VE** as the hypervisor. Kubernetes runs inside VMs provisioned from a **Rocky Linux 9** cloud-init template.
+> Table above is the original template target (Proxmox + VMs). Actual
+> current fleet is 3 bare-metal Rocky Linux 9 hosts (host1/host2/host3),
+> no hypervisor anywhere - see the Note below.
 
 ## Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Hypervisor | Proxmox VE |
-| OS | Rocky Linux 9 (cloud-init) |
+| Hypervisor | ~~Proxmox VE~~ none - bare-metal (see Note below) |
+| OS | Rocky Linux 9 (kickstart, bare-metal) |
 | Container runtime | containerd |
 | Kubernetes | kubeadm 1.31 |
 | CNI | Cilium (eBPF) |
@@ -32,11 +34,10 @@ Each machine runs **Proxmox VE** as the hypervisor. Kubernetes runs inside VMs p
 
 ```
 .
-├── bare-metal/             # PXE provisioning via a GL.iNet Opal (Rocky kickstart + Proxmox auto-install)
+├── bare-metal/             # PXE provisioning via a GL.iNet Opal (Rocky kickstart, all 3 hosts)
 │   ├── router/             # GL.iNet Opal config (dnsmasq DHCP/TFTP + iPXE chainload)
-│   ├── kickstart/          # Rocky Linux 9 kickstart(s) for bare-metal nodes
-│   └── proxmox/            # Proxmox answer file(s) + generated netboot images (gitignored)
-├── terraform/proxmox/      # Provision VMs on Proxmox
+│   └── kickstart/          # Rocky Linux 9 kickstarts, one per host
+├── terraform/proxmox/      # Provision VMs on Proxmox (currently unused - see Note)
 ├── ansible/                # Bootstrap OS and kubeadm
 │   ├── inventory/
 │   ├── group_vars/
@@ -50,16 +51,22 @@ Each machine runs **Proxmox VE** as the hypervisor. Kubernetes runs inside VMs p
 └── docs/                   # Detailed runbooks
 ```
 
-> **Note**: this repo's stack assumes Proxmox VE on every node with K8s running in
-> VMs. The actual current setup diverges: `host1` and `host3` run Proxmox
-> (`host3` doubles as media server + a disposable k8s sandbox for cert
-> practice); `host2` is bare-metal Rocky Linux (no hypervisor). Both paths are
-> provisioned via [`bare-metal/`](bare-metal/) - kickstart for `host2`, the
-> official Proxmox auto-installer for `host3`/`host1`. Terraform/Ansible below
-> target the Proxmox-VM path and should work as-is once `host1`/`host3` are up
-> — `host2` still needs a decision on how it joins the cluster as a bare-metal
-> kubeadm node (Ansible would need a conditional path for it, or it stays
-> outside the Terraform-provisioned VM fleet entirely).
+> **Note**: this repo's stack was designed for Proxmox VE on every node with
+> K8s running in VMs (Terraform provisions the VMs, Ansible bootstraps
+> kubeadm inside them). The actual fleet ended up fully bare-metal instead -
+> `host1`, `host2`, `host3` all run Rocky Linux 9 directly, provisioned via
+> [`bare-metal/`](bare-metal/) (PXE + kickstart through a GL.iNet Opal, no
+> hypervisor, no VMs). We tried Proxmox on host1/host3 first but the
+> Proxmox auto-installer's netboot path (huge initrd, needs local USB
+> staging on the Opal, more failure modes) turned out more fragile than
+> Rocky/Anaconda's - see `bare-metal/README.md` for the full story.
+>
+> Practical consequence: `terraform/proxmox/` is currently unused - there's
+> no Proxmox host left to provision VMs on. `ansible/` still applies in
+> spirit (containerd + kubeadm bootstrap), but its `inventory/hosts.yml`
+> and any Proxmox-specific assumptions need to point at the 3 bare-metal
+> IPs (`10.10.10.10/20/30` on the provisioning subnet, or wherever they
+> end up on the main LAN) instead of VM IPs. Not yet done.
 
 ## Getting Started
 

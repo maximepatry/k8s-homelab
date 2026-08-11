@@ -54,46 +54,6 @@ ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "
 echo "==> Restarting dnsmasq..."
 ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "/etc/init.d/dnsmasq restart"
 
-# --- Proxmox netboot files (host3) live on a USB drive plugged into the
-# Opal, not on its 128MB flash - see proxmox/answer-host3.toml. Workflow:
-#   1. Generate vmlinuz/initrd.img locally (container, or on host1 - see
-#      README) with `proxmox-auto-install-assistant prepare-iso ... --pxe`
-#   2. Format a USB drive as exFAT from your Mac (Disk Utility - macOS
-#      can't write ext4 natively, exFAT needs no extra module fuss and has
-#      no 4GB file-size ceiling like FAT32) and copy vmlinuz/initrd.img
-#      onto it directly - no network transfer needed for these big files.
-#   3. Plug that drive into the Opal's USB port, then run this script.
-# This section just mounts whatever's on the drive and verifies the two
-# files are there - it does NOT copy them itself.
-echo "==> Setting up USB storage on the Opal for Proxmox netboot files..."
-ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "opkg update && opkg install kmod-usb-storage kmod-fs-exfat block-mount || true"
-
-echo "==> Looking for a USB block device on the Opal..."
-USB_DEV=$(ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "block info 2>/dev/null | grep -m1 -oE '^/dev/sd[a-z][0-9]*'" || true)
-if [[ -z "$USB_DEV" ]]; then
-  echo "    No USB drive detected - plug the one with vmlinuz/initrd.img into" >&2
-  echo "    the Opal's USB port and re-run. Skipping Proxmox netboot setup for now." >&2
-else
-  echo "    Found $USB_DEV"
-
-  echo "==> Mounting $USB_DEV at /www/proxmox and making it persistent via fstab..."
-  ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "
-    mkdir -p /www/proxmox
-    grep -q '$USB_DEV' /etc/config/fstab 2>/dev/null || block detect >> /etc/config/fstab
-    uci -q delete fstab.usbproxmox 2>/dev/null
-    uci set fstab.usbproxmox='mount'
-    uci set fstab.usbproxmox.device='$USB_DEV'
-    uci set fstab.usbproxmox.target='/www/proxmox'
-    uci set fstab.usbproxmox.enabled='1'
-    uci commit fstab
-    mount $USB_DEV /www/proxmox 2>/dev/null || block mount
-  "
-
-  echo "==> Verifying vmlinuz/initrd.img are present on the drive..."
-  ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "ls -la /www/proxmox/vmlinuz /www/proxmox/initrd.img" \
-    || echo "    Missing - did you copy both files onto the USB drive before plugging it in?" >&2
-fi
-
 echo "Done. Enable PXE boot in each mini PC's BIOS/UEFI and power it on -"
-echo "it should chainload iPXE, then fetch its kickstart (Rocky) or"
-echo "auto-installer (Proxmox) accordingly."
+echo "it should chainload iPXE, then fetch its kickstart from GitHub and"
+echo "the Rocky mirror directly. No local file staging needed on the Opal."
