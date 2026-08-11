@@ -30,9 +30,9 @@ CONFDIR_LIVE="/tmp/dnsmasq.d"
 echo "==> Installing dnsmasq-full (adds TFTP support) if not already present..."
 ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "opkg update && opkg install dnsmasq-full || true"
 
-echo "==> Fetching the iPXE boot binary (undionly.kpxe, ~1MB)..."
+echo "==> Fetching the iPXE boot binary (ipxe.efi, ~1MB - UEFI targets only)..."
 ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "mkdir -p /www/ipxe && \
-  wget -O /www/ipxe/undionly.kpxe http://boot.ipxe.org/undionly.kpxe"
+  wget -O /www/ipxe/ipxe.efi http://boot.ipxe.org/ipxe.efi"
 
 echo "==> Uploading boot.ipxe (persistent, served by uhttpd from /www)..."
 ssh "${SSH_OPTS[@]}" root@"$OPAL_IP" "mkdir -p /www && cat > /www/boot.ipxe" < "$SCRIPT_DIR/boot.ipxe"
