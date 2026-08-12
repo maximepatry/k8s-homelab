@@ -54,6 +54,16 @@ plaintext value in a public repo:
 kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d && echo
 ```
 
+**Known gotcha, hit on this cluster**: the chart's password template (`randAlphaNum`) has no stable seed
+across renders, so the Secret's value changes on *every* ArgoCD sync/refresh - but Grafana only reads it
+once, when its (persistent, PVC-backed) SQLite DB is first initialized. After any later sync, the Secret
+and Grafana's actual admin password can silently drift apart, and login with the "current" secret value
+fails with `Invalid username or password`. If that happens, reset it to match:
+```bash
+kubectl -n monitoring exec monitoring-grafana-0 -c grafana -- \
+  grafana cli admin reset-admin-password "$(kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d)"
+```
+
 ## Accessing Prometheus directly
 
 ```bash
