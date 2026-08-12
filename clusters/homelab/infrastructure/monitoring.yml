@@ -90,3 +90,10 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # The Prometheus Operator CRDs (Prometheus, Alertmanager, etc.) have
+      # OpenAPI schemas large enough that client-side apply's
+      # kubectl.kubernetes.io/last-applied-configuration annotation exceeds
+      # Kubernetes' 262144-byte annotation limit - a well-known
+      # kube-prometheus-stack + ArgoCD gotcha. Server-side apply doesn't
+      # use that annotation at all, so it doesn't hit the limit.
+      - ServerSideApply=true
