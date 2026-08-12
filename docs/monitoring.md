@@ -4,6 +4,29 @@ Installed via the `prometheus-community/kube-prometheus-stack` Helm chart
 (`clusters/homelab/infrastructure/monitoring.yml`) — Prometheus, Grafana, Alertmanager,
 node-exporter, kube-state-metrics, and the Prometheus Operator, all in the `monitoring` namespace.
 
+## Installing/upgrading the CRDs (one-time, manual)
+
+The chart's `monitoring.yml` Application sets `helm.skipCrds: true` — ArgoCD never installs or manages
+these CRDs itself. Confirmed on this cluster: the Prometheus/Alertmanager/etc. CRDs are large enough that
+client-side apply's `kubectl.kubernetes.io/last-applied-configuration` annotation exceeds Kubernetes'
+262144-byte limit, and neither ArgoCD's `ServerSideApply=true` nor `Replace=true` sync options actually
+avoid this for CRD resources specifically in this ArgoCD version (v2.13.4) — a plain
+`kubectl apply --server-side` on the exact same CRD works fine, so it's an ArgoCD limitation, not a real
+size problem.
+
+Install/update them by rendering the chart locally and applying with real server-side apply:
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update prometheus-community
+helm template monitoring prometheus-community/kube-prometheus-stack \
+  --version 88.* --include-crds --namespace monitoring \
+  | kubectl apply --server-side -f -
+```
+
+Re-run this after bumping the chart's `targetRevision` in `monitoring.yml` to a version with CRD schema
+changes — otherwise Prometheus/Alertmanager Custom Resources may fail validation against a stale CRD.
+
 ## Accessing Grafana
 
 Two ways:

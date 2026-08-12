@@ -10,6 +10,22 @@ spec:
     chart: kube-prometheus-stack
     targetRevision: "88.*"
     helm:
+      # The Prometheus Operator CRDs (Prometheus, Alertmanager, etc.) have
+      # OpenAPI schemas large enough that client-side apply's
+      # kubectl.kubernetes.io/last-applied-configuration annotation exceeds
+      # Kubernetes' 262144-byte annotation limit - a well-known
+      # kube-prometheus-stack + ArgoCD gotcha. Neither the Application-level
+      # `ServerSideApply=true` syncOption nor `Replace=true` actually fixed
+      # this on this cluster (confirmed: ArgoCD's CRD apply path doesn't
+      # honor ServerSideApply, and Replace is disabled server-side on this
+      # ArgoCD install) - a plain `kubectl apply --server-side` on the same
+      # CRD works fine, proving it's an ArgoCD-specific limitation, not a
+      # real size problem. Fix: skip CRD management here entirely and
+      # apply all 10 CRDs once, manually, via server-side apply - see
+      # docs/monitoring.md, "Installing/upgrading the CRDs" for the exact
+      # command. Re-run it after bumping targetRevision to a version with
+      # CRD changes.
+      skipCrds: true
       valuesObject:
         # By default this chart's admission webhook TLS cert is generated
         # by a PreSync hook Job (kube-webhook-certgen) - the exact pattern
@@ -90,10 +106,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      # The Prometheus Operator CRDs (Prometheus, Alertmanager, etc.) have
-      # OpenAPI schemas large enough that client-side apply's
-      # kubectl.kubernetes.io/last-applied-configuration annotation exceeds
-      # Kubernetes' 262144-byte annotation limit - a well-known
-      # kube-prometheus-stack + ArgoCD gotcha. Server-side apply doesn't
-      # use that annotation at all, so it doesn't hit the limit.
-      - ServerSideApply=true
