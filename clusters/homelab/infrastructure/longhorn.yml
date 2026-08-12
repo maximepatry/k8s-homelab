@@ -17,6 +17,18 @@ spec:
         persistence:
           defaultClass: true
           defaultClassReplicaCount: 2
+        preUpgradeChecker:
+          # The chart's own docs recommend this for ArgoCD/GitOps installs:
+          # the pre-upgrade check is a PreSync hook Job that assumes the
+          # longhorn-service-account it runs as already exists - true on a
+          # real `helm upgrade`, not on ArgoCD's first sync of a fresh
+          # install (PreSync hooks run before the regular Sync-phase
+          # ServiceAccount, so the Job can never actually schedule). The
+          # Application-level `SkipHooks=true` syncOption does not actually
+          # work around this in the ArgoCD version this cluster runs
+          # (v2.13.4 - the option is accepted but silently has no effect),
+          # so disable the hook at the chart level instead.
+          jobEnabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: longhorn-system
@@ -26,11 +38,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      # The chart's pre-upgrade/post-upgrade hook Jobs assume the
-      # ServiceAccount they need already exists, which is only true on an
-      # actual `helm upgrade` (not ArgoCD's first sync of a fresh install)
-      # - PreSync hooks run before regular Sync-phase resources, so the SA
-      # never exists in time and the hook Job permanently fails to schedule.
-      # Skipping hooks entirely is fine here: there's no prior Longhorn
-      # version to check compatibility against on a fresh install.
-      - SkipHooks=true
