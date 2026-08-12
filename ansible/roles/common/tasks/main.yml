@@ -8,6 +8,7 @@
       - iscsi-initiator-utils   # required by Longhorn
       - nfs-utils               # required by Longhorn
       - iproute-tc              # required by Cilium
+      - conntrack-tools         # required by kubeadm preflight checks
     state: present
 
 - name: Enable and start iscsid

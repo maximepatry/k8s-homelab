@@ -15,9 +15,16 @@
     state: directory
 
 - name: Generate default containerd config
+  # No `creates:` guard here on purpose - the containerd.io RPM ships its
+  # own minimal /etc/containerd/config.toml template with
+  # `disabled_plugins = ["cri"]` (meant for plain Docker use, not
+  # Kubernetes). Gating on that file already existing means this command
+  # never actually runs and CRI stays disabled - kubeadm then fails at
+  # preflight with "unknown service runtime.v1.RuntimeService". Regenerating
+  # the real default (CRI enabled) on every run is safe: the next task
+  # patches SystemdCgroup on top of it in the same play.
   shell: containerd config default > /etc/containerd/config.toml
-  args:
-    creates: /etc/containerd/config.toml
+  notify: restart containerd
 
 - name: Enable SystemdCgroup in containerd
   replace:

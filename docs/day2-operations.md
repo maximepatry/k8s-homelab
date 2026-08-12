@@ -1,5 +1,8 @@
 # Day 2 Operations
 
+All commands below assume you're on the jumpbox with the WireGuard tunnel up (`bare-metal/README.md`) and
+`cd`'d into `ansible/` or the repo root as noted.
+
 ## Upgrading Kubernetes
 
 Kubernetes supports upgrading one minor version at a time (e.g., 1.31 → 1.32).
@@ -11,11 +14,10 @@ In `ansible/group_vars/all.yml`:
 kubernetes_version: "1.32"
 ```
 
-### 2. Upgrade the control plane
+### 2. Upgrade the control plane (host1)
 
 ```bash
-# SSH into control plane
-ssh rocky@192.168.1.101
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10
 
 # Update the repo to the new minor version (already done via group_vars + Ansible)
 # Or manually edit /etc/yum.repos.d/kubernetes.repo baseurl to v1.32
@@ -46,10 +48,10 @@ sudo systemctl restart kubelet
 
 ```bash
 # From your local machine — drain the node
-kubectl drain ser5-worker-1 --ignore-daemonsets --delete-emptydir-data
+kubectl drain host2 --ignore-daemonsets --delete-emptydir-data
 
-# SSH into worker
-ssh rocky@192.168.1.102
+# SSH into the worker
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20
 sudo dnf install -y --disableexcludes=kubernetes kubeadm-1.32.* kubelet-1.32.* kubectl-1.32.*
 sudo dnf versionlock delete kubeadm kubelet kubectl
 sudo dnf versionlock add kubeadm kubelet kubectl
@@ -58,10 +60,10 @@ sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 
 # From local — uncordon
-kubectl uncordon ser5-worker-1
+kubectl uncordon host2
 ```
 
-Repeat for `ser5-worker-2`.
+Repeat for `host3` (10.10.10.30).
 
 ---
 
@@ -70,7 +72,7 @@ Repeat for `ser5-worker-2`.
 Certificates created by kubeadm expire after 1 year. Check expiry:
 
 ```bash
-ssh rocky@192.168.1.101
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10
 sudo kubeadm certs check-expiration
 ```
 
@@ -87,19 +89,26 @@ sudo mv /tmp/admin.conf /etc/kubernetes/admin.conf
 
 Then re-fetch the kubeconfig locally:
 ```bash
-scp ubuntu@192.168.1.101:/etc/kubernetes/admin.conf clusters/homelab/kubeconfig
+scp -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10:/etc/kubernetes/admin.conf clusters/homelab/kubeconfig
 ```
 
 ---
 
 ## Adding a Worker Node
 
-1. Provision a new VM via Terraform (add an entry to the `nodes` variable)
-2. Run Ansible against the new node only:
+There's no VM layer to provision through Terraform anymore — a new node means new physical hardware:
+
+1. Add the host to `bare-metal/hosts.csv`, `bare-metal/router/dnsmasq-provisioning.conf`, and
+   `bare-metal/router/boot.ipxe` (MAC/IP, kept in sync manually — see `bare-metal/README.md`), plus a new
+   `bare-metal/kickstart/ks-hostN.cfg`. Redeploy with `./bare-metal/router/deploy-opal.sh 10.10.10.1` and
+   PXE-boot the new machine.
+2. Add it to `ansible/inventory/hosts.yml` (under `workers`) and a matching `ansible/host_vars/hostN.yml`
+   (poll real hardware first — `lsblk`/`vgs` — don't guess the Longhorn LV size).
+3. Run Ansible against the new node only:
    ```bash
-   ansible-playbook playbooks/bootstrap.yml --limit <new-node-name>
+   ansible-playbook playbooks/bootstrap.yml --limit hostN
    ```
-3. The worker role generates a fresh join token and joins the node automatically
+4. The worker role generates a fresh join token and joins the node automatically.
 
 ---
 
@@ -107,15 +116,16 @@ scp ubuntu@192.168.1.101:/etc/kubernetes/admin.conf clusters/homelab/kubeconfig
 
 ```bash
 # Drain
-kubectl drain ser5-worker-2 --ignore-daemonsets --delete-emptydir-data --force
+kubectl drain host3 --ignore-daemonsets --delete-emptydir-data --force
 
 # Delete from cluster
-kubectl delete node ser5-worker-2
-
-# Destroy the VM
-cd terraform/proxmox
-terraform destroy -target module.worker[\"ser5-worker-2\"]
+kubectl delete node host3
 ```
+
+There's no `terraform destroy` step — the physical machine keeps existing, it's just no longer in the
+cluster. If it's leaving the fleet entirely, remove its entries from `bare-metal/hosts.csv`,
+`dnsmasq-provisioning.conf`, `boot.ipxe`, and `ansible/inventory/hosts.yml` (see `bare-metal/README.md`'s
+comment-vs-delete convention for the PXE dispatch entries).
 
 Longhorn will rebuild replicas on the remaining nodes after removal.
 
@@ -127,19 +137,22 @@ Always drain before rebooting to avoid disruption:
 
 ```bash
 kubectl drain <node> --ignore-daemonsets --delete-emptydir-data
-ssh ubuntu@<node-ip> sudo reboot
+ssh -i ~/.ssh/id_ed25519_homelab foo@<host-ip> sudo reboot
 # Wait for node to come back
 kubectl uncordon <node>
 ```
+
+Verify the host's boot order still prioritizes the local disk before rebooting anything with PXE enabled
+— `bare-metal/README.md` documents the host2 reinstall-loop incident this caused once already.
 
 ---
 
 ## Backing Up etcd
 
-kubeadm clusters store all cluster state in etcd on the control plane.
+kubeadm clusters store all cluster state in etcd on the control plane (host1).
 
 ```bash
-ssh rocky@192.168.1.101
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10
 
 sudo ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-backup-$(date +%Y%m%d).db \
   --endpoints=https://127.0.0.1:2379 \
@@ -153,28 +166,33 @@ sudo ETCDCTL_API=3 etcdctl snapshot status /tmp/etcd-backup-$(date +%Y%m%d).db -
 
 Copy the snapshot off the node:
 ```bash
-scp ubuntu@192.168.1.101:/tmp/etcd-backup-$(date +%Y%m%d).db ./backups/
+scp -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10:/tmp/etcd-backup-$(date +%Y%m%d).db ./backups/
 ```
 
 ---
 
 ## Rebuilding the Cluster from Scratch
 
-```bash
-# Destroy VMs
-cd terraform/proxmox && terraform destroy
+There's no VM layer to tear down/recreate — "from scratch" means re-running kubeadm on the same hosts:
 
-# Re-provision
-terraform apply
+```bash
+# Reset kubeadm state on every host (control plane first, then workers)
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10 sudo kubeadm reset -f
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20 sudo kubeadm reset -f
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.30 sudo kubeadm reset -f
 
 # Re-bootstrap
-cd ../../ansible
+cd ansible
 ansible-playbook playbooks/bootstrap.yml
 
-# Re-apply ArgoCD
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-kubectl apply -f clusters/homelab/bootstrap/app-of-apps.yml
+# Re-install ArgoCD + reapply the bootstrap manifests
+cd ../terraform/cluster-bootstrap
+terraform apply
 ```
+
+If you actually want to wipe a host back to bare Rocky (not just reset kubeadm), that goes through
+`bare-metal/` — re-enable its PXE dispatch (see the comment-vs-delete convention in
+`bare-metal/README.md`) and reboot it into PXE. This wipes the disk, so only do this deliberately.
 
 ---
 

@@ -1,0 +1,34 @@
+# Two AppProjects enforce prod/stage isolation at the ArgoCD level: an
+# Application in the "stage" project cannot deploy into namespace "prod"
+# (or vice versa), regardless of what its manifests say.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: prod
+  namespace: argocd
+spec:
+  description: Production workloads
+  sourceRepos:
+    - https://github.com/maximepatry/k8s-homelab
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: prod
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: stage
+  namespace: argocd
+spec:
+  description: Staging workloads
+  sourceRepos:
+    - https://github.com/maximepatry/k8s-homelab
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: stage
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace

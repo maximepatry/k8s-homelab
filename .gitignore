@@ -9,9 +9,13 @@ secrets/
 # Terraform
 **/.terraform/
 *.tfstate
-*.tfstate.backup
+*.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# Kubeconfig fetched by the control-plane Ansible role - live cluster-admin
+# credential, must never be committed to this public repo.
+clusters/homelab/kubeconfig
 
 # Helm
 charts/*.tgz

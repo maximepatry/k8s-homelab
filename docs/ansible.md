@@ -1,25 +1,32 @@
 # Ansible — Cluster Bootstrap
 
-Ansible configures the OS and bootstraps Kubernetes on the three Rocky Linux 9 VMs. It is idempotent — safe to rerun.
+Ansible configures the OS and bootstraps Kubernetes on the three bare-metal Rocky Linux 9 hosts. It is
+idempotent — safe to rerun. Run from the jumpbox, over the WireGuard tunnel into `10.10.10.0/24`
+(`bare-metal/README.md`, "Tunnel WireGuard pour le jumpbox").
 
 ## Prerequisites
 
 ```bash
 pip install ansible
-ansible-galaxy collection install ansible.posix community.general ansible.builtin
+ansible-galaxy collection install ansible.posix community.general
 ```
+
+SSH access as `foo` (kickstart-created user, root login locked) with `~/.ssh/id_ed25519_homelab` — both
+already set as defaults in `ansible/ansible.cfg`.
 
 ## Inventory
 
 `ansible/inventory/hosts.yml` defines the three nodes:
 
 ```
-control_plane: n150-cp       (192.168.1.101)
-workers:       ser5-worker-1 (192.168.1.102)
-               ser5-worker-2 (192.168.1.103)
+control_plane: host1 (10.10.10.10)
+workers:       host2 (10.10.10.20)
+               host3 (10.10.10.30)
 ```
 
-Update IPs here if your network differs from the defaults.
+host1 was chosen as control-plane because live hardware polling showed it's the strongest node (Ryzen 7
+6800H, 1TB NVMe) — not the convention of putting the lightest node on the control-plane. See the top-level
+README's hardware table.
 
 ## Configuration
 
@@ -27,14 +34,17 @@ Key variables in `ansible/group_vars/all.yml`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `kubernetes_version` | `1.31` | Minor version for apt repo |
-| `containerd_version` | `1.7.*` | containerd package version |
+| `kubernetes_version` | `1.31` | Minor version for the kubeadm/kubelet/kubectl repo |
 | `pod_cidr` | `10.244.0.0/16` | Pod network range |
 | `service_cidr` | `10.96.0.0/12` | Service network range |
-| `cluster_name` | `homelab` | kubeadm cluster name |
 | `kube_proxy_enabled` | `false` | Cilium replaces kube-proxy |
+| `ansible_user` | `foo` | Kickstart-created user; root login is locked |
 
-Workers additionally have `longhorn_data_disk: /dev/sdb` in `group_vars/workers.yml`.
+There's no `--cluster-name` flag on `kubeadm init` (it's a `ClusterConfiguration` field, only settable via
+a full `--config` file) — not worth introducing one just to name the cluster "homelab" cosmetically.
+
+Per-host `longhorn_lv_size_gb` in `ansible/host_vars/{host1,host2,host3}.yml` — sized from each host's real
+free LVM space (see `docs/storage.md`).
 
 ## Running the Full Bootstrap
 
@@ -45,29 +55,32 @@ ansible-playbook playbooks/bootstrap.yml
 
 Execution order:
 1. **common** (all nodes) — swap off, kernel modules, sysctl, open-iscsi
-2. **containerd** (all nodes) — install, configure `SystemdCgroup=true`
-3. **kubeadm** (all nodes) — install kubelet/kubeadm/kubectl, hold versions
-4. **control-plane** (n150-cp) — `kubeadm init`, fetch kubeconfig to `clusters/homelab/kubeconfig`
-5. **worker** (ser5-worker-1, ser5-worker-2) — `kubeadm join`
-
-Total runtime: ~10 minutes.
+2. **storage** (all nodes) — carve an LV from free VG space, mount at `/var/lib/longhorn`
+3. **containerd** (all nodes) — install, configure `SystemdCgroup=true`
+4. **kubeadm** (all nodes) — install kubelet/kubeadm/kubectl, hold versions
+5. **control-plane** (host1) — `kubeadm init`, remove the control-plane `NoSchedule` taint (host1 is the
+   strongest node — don't waste its capacity on etcd alone), fetch kubeconfig to
+   `clusters/homelab/kubeconfig`
+6. **worker** (host2, host3) — `kubeadm join`
 
 ## After Bootstrap
 
-The kubeconfig is written to `clusters/homelab/kubeconfig`. Use it locally:
+The kubeconfig is written to `clusters/homelab/kubeconfig` (gitignored — it's a live cluster-admin
+credential, this repo is public). Use it locally:
 
 ```bash
 export KUBECONFIG=$(pwd)/clusters/homelab/kubeconfig
 kubectl get nodes
 ```
 
-Nodes will show `NotReady` until Cilium is deployed (no CNI yet).
+Nodes will show `NotReady` until Cilium is deployed via ArgoCD (no CNI yet) — see `docs/terraform.md` for
+the next step (installing ArgoCD).
 
 ## Running Individual Roles
 
 ```bash
-# Only run containerd role
-ansible-playbook playbooks/bootstrap.yml --tags containerd
+# Only run the storage role
+ansible-playbook playbooks/bootstrap.yml --tags storage
 
 # Only run on workers
 ansible-playbook playbooks/bootstrap.yml --limit workers
@@ -94,6 +107,12 @@ ansible all -m ping
 - **Disables firewalld** — Cilium manages packet filtering via eBPF; firewalld conflicts with it
 - **Sets SELinux to permissive** — enforcing mode blocks several kubelet and container operations; permissive logs violations without blocking, useful for learning what would break
 
+### storage
+- None of the three hosts have a second disk — each is single-disk (`autopart --type=lvm --nohome` from
+  the kickstart) with substantial free space left in its LVM volume group after root+swap
+- Carves an LV (`lv_longhorn`, sized per-host in `ansible/host_vars/`) out of that free space, formats
+  XFS, mounts at `/var/lib/longhorn`
+
 ### containerd
 - Adds Docker CE's `centos` yum repo (provides `containerd.io` for Rocky Linux)
 - Generates default config then patches `SystemdCgroup = true`
@@ -102,6 +121,8 @@ ansible all -m ping
 ### control-plane
 - Runs `kubeadm init --skip-phases=addon/kube-proxy`
 - `kube-proxy` is intentionally skipped — Cilium handles service routing via eBPF
+- Removes the control-plane `NoSchedule` taint — host1 is the strongest node in the fleet, not just an
+  etcd appliance
 - Generates a join token and stores it as a fact for the worker play
 - Fetches `/etc/kubernetes/admin.conf` to your local `clusters/homelab/kubeconfig`
 

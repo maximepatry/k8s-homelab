@@ -1,0 +1,21 @@
+# App-of-apps root for apps/stage. Same pattern as apps-prod.yml - stays in
+# the default project, isolation is enforced by each child Application
+# under apps/stage/*.yml declaring `project: stage` (see projects.yml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: apps-stage
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/maximepatry/k8s-homelab
+    targetRevision: main
+    path: apps/stage
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

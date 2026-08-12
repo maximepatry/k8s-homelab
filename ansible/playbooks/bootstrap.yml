@@ -2,16 +2,23 @@
 - name: Common setup on all nodes
   hosts: k8s_cluster
   roles:
-    - common
-    - containerd
-    - kubeadm
+    - role: common
+      tags: common
+    - role: storage
+      tags: storage
+    - role: containerd
+      tags: containerd
+    - role: kubeadm
+      tags: kubeadm
 
 - name: Initialize control plane
   hosts: control_plane
   roles:
-    - control-plane
+    - role: control-plane
+      tags: control-plane
 
 - name: Join workers
   hosts: workers
   roles:
-    - worker
+    - role: worker
+      tags: worker

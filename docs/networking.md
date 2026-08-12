@@ -51,10 +51,12 @@ MetalLB runs in **L2 mode**, which means it responds to ARP requests for LoadBal
 
 ### Required post-Helm CRs
 
-The Helm chart installs the MetalLB controller and speaker but does **not** create an IP pool. You must apply these manually after Helm deploys MetalLB:
+The Helm chart installs the MetalLB controller and speaker but does **not** create an IP pool by itself.
+`clusters/homelab/infrastructure/metallb-pool.yml` (a separate ArgoCD Application, synced one wave after
+`metallb.yml` so the CRDs exist first) applies:
 
 ```yaml
-# infrastructure/metallb/ip-address-pool.yml
+# clusters/homelab/infrastructure/metallb-pool/ip-address-pool.yml
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
@@ -62,7 +64,7 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-    - 192.168.1.200-192.168.1.220   # adjust to a free range on your LAN
+    - 10.10.10.250-10.10.10.253
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -74,9 +76,7 @@ spec:
     - homelab-pool
 ```
 
-```bash
-kubectl apply -f infrastructure/metallb/ip-address-pool.yml
-```
+This is applied automatically by ArgoCD (see `docs/argocd-gitops.md`), not manually.
 
 ### Verifying
 
@@ -89,11 +89,17 @@ If a `LoadBalancer` service is stuck in `<pending>`, `IPAddressPool` is missing 
 
 ### IP range planning
 
-Pick a range outside your router's DHCP range to avoid conflicts. Example with a typical home router DHCP pool of `192.168.1.2–192.168.1.150`:
+Pick a range outside the Opal's DHCP pool to avoid conflicts. The Opal's DHCP range is
+`10.10.10.2-249` (`bare-metal/router/dnsmasq-provisioning.conf`), so the MetalLB pool uses the tail end
+outside it:
 
 ```
-MetalLB pool: 192.168.1.200–192.168.1.220
+MetalLB pool: 10.10.10.250-10.10.10.253
 ```
+
+Only 4 addresses — plenty for a homelab's worth of LoadBalancer services (ingress-nginx being the main
+one), but if you outgrow it, shrinking the Opal's DHCP range (`10.10.10.2-249` → e.g. `10.10.10.2-199`)
+via its LAN settings frees up more room at the top for MetalLB.
 
 ---
 

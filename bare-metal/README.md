@@ -102,6 +102,87 @@ relance simplement `deploy-opal.sh` pour repousser la mise à jour.
 `scp` ne fonctionne pas sur ce firmware (pas de serveur SFTP) - le script
 utilise `ssh ... "cat > fichier" < local` à la place.
 
+## Tunnel WireGuard pour le jumpbox (Mac)
+
+Le LAN de provisioning (`10.10.10.0/24`) est volontairement isolé - un
+MacBook posé sur le réseau domestique (côté WAN de l'Opal) n'a par défaut
+aucun chemin vers les hosts. Pour piloter Ansible/Terraform/kubectl depuis
+ce Mac sans être physiquement/en Wi-Fi sur le LAN de l'Opal, un tunnel
+WireGuard (`wg_mgmt`) tourne côté Opal :
+
+- Interface serveur `wg_mgmt` sur `10.10.11.1/24`, port UDP `51821` (choisi
+  pour ne pas entrer en conflit avec la fonctionnalité "WireGuard Server"
+  native de GL.iNet - `/etc/config/wireguard_server`, port `51820` -
+  présente sur ce firmware mais désactivée/non utilisée ; on n'y touche pas).
+- Un peer pour le Mac (`10.10.11.2/32`), avec `route_allowed_ips=1`.
+- Une zone firewall `wg_mgmt` + forwarding `wg_mgmt -> lan` (sans quoi le
+  tunnel se connecte mais ne route rien vers `10.10.10.0/24`) + une règle
+  WAN autorisant `udp/51821` en entrée.
+
+### Prérequis découverts en le mettant en place
+
+- **Dropbear sur ce firmware n'a pas de support Ed25519** (build embarqué,
+  `strings /usr/sbin/dropbear` ne contient aucune référence ed25519) - la
+  clé `~/.ssh/id_ed25519_homelab` utilisée pour les hosts Rocky ne
+  fonctionnera PAS pour SSH vers l'Opal, même une fois ajoutée à
+  `/etc/dropbear/authorized_keys` (échoue silencieusement côté client :
+  `Offering public key... / Authentications that can continue: publickey,password`
+  sans autre indice). Il faut une clé **RSA** dédiée, ex. :
+  ```bash
+  ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_opal -C "opal-admin@jumpbox"
+  # une fois la clé publique ajoutée à /etc/dropbear/authorized_keys sur l'Opal :
+  ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+    -i ~/.ssh/id_rsa_opal root@10.10.10.1
+  ```
+- `wireguard-tools`/`kmod-wireguard` sont déjà installés sur l'Opal (servent
+  normalement à sa propre fonction client VPN voyage - `gl-sdk4-wg-client`,
+  policy routing `policy_default_rt_vpn*` - non touchée par ce qui suit).
+
+### Mise en place
+
+```bash
+# Cote Mac : générer sa propre paire de clés (la clé privée ne quitte jamais
+# la machine, jamais commit - voir .gitignore : *.key)
+mkdir -p ~/.wireguard-homelab && chmod 700 ~/.wireguard-homelab
+wg genkey | tee ~/.wireguard-homelab/mac-jumpbox.key | wg pubkey \
+  > ~/.wireguard-homelab/mac-jumpbox.pub
+
+# Pousse la config sur l'Opal (backup UCI auto + génère la paire de clés
+# côté Opal si absente + reload network/firewall)
+./router/deploy-wireguard.sh 10.10.10.1 "$(cat ~/.wireguard-homelab/mac-jumpbox.pub)"
+```
+
+Le script affiche la clé publique de l'Opal à la fin - à coller dans le
+`Peer.PublicKey` du fichier client ci-dessous.
+
+Fichier client (`~/.wireguard-homelab/mac-jumpbox.conf`, `chmod 600`) :
+
+```ini
+[Interface]
+PrivateKey = <contenu de ~/.wireguard-homelab/mac-jumpbox.key>
+Address = 10.10.11.2/24
+
+[Peer]
+PublicKey = <clé publique affichée par deploy-wireguard.sh>
+Endpoint = <IP de l'Opal côté réseau domestique>:51821
+AllowedIPs = 10.10.10.0/24, 10.10.11.0/24
+PersistentKeepalive = 25
+```
+
+```bash
+sudo wg-quick up ~/.wireguard-homelab/mac-jumpbox.conf
+# ... travail sur le homelab ...
+sudo wg-quick down ~/.wireguard-homelab/mac-jumpbox.conf
+```
+
+**⚠️ L'IP `Endpoint` est l'adresse DHCP de l'Opal côté réseau domestique
+(`ip -br a` sur l'Opal, interface `eth0.2` - observée à `192.168.2.109` au
+moment de la mise en place) - elle peut changer à chaque renouvellement de
+bail DHCP. Fixer une réservation DHCP statique pour la MAC de l'Opal
+(`94:83:c4:60:84:c0`) sur le routeur domestique pour que ça ne casse pas
+plus tard - ce n'est pas gérable depuis ce repo, c'est côté routeur
+domestique.**
+
 ## Mise à jour de WireGuard sur l'Opal
 
 Deux voies concrètes :

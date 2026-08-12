@@ -19,13 +19,13 @@ jobs:
           terraform_version: "~1.9"
 
       - name: Format check
-        run: terraform -chdir=terraform/proxmox fmt -check -recursive
+        run: terraform -chdir=terraform/cluster-bootstrap fmt -check -recursive
 
       - name: Init (no backend)
-        run: terraform -chdir=terraform/proxmox init -backend=false
+        run: terraform -chdir=terraform/cluster-bootstrap init -backend=false
 
       - name: Validate
-        run: terraform -chdir=terraform/proxmox validate
+        run: terraform -chdir=terraform/cluster-bootstrap validate
 
   ansible:
     name: Ansible lint
@@ -57,4 +57,4 @@ jobs:
 
       - run: pip install yamllint
 
-      - run: yamllint -c .yamllint.yml clusters/ ansible/
+      - run: yamllint -c .yamllint.yml clusters/ ansible/ apps/

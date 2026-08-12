@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars and adjust if your defaults don't apply.
+# All variables have working defaults (see variables.tf) - this file only
+# needs to exist if you're overriding one of them.
+
+# kubeconfig_path = "../../clusters/homelab/kubeconfig"
+# repo_url        = "https://github.com/maximepatry/k8s-homelab"
+# target_revision = "main"
+# argocd_chart_version = "7.7.*"

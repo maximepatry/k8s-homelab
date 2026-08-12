@@ -1,0 +1,24 @@
+# App-of-apps root for apps/prod. This root Application itself stays in the
+# default project (it's just bootstrap plumbing that creates other
+# Application resources) - the isolation is enforced by each *child*
+# Application placed under apps/prod/*.yml declaring `project: prod`, which
+# the "prod" AppProject (see projects.yml) restricts to destination
+# namespace "prod" only.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: apps-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/maximepatry/k8s-homelab
+    targetRevision: main
+    path: apps/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

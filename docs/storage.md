@@ -1,14 +1,26 @@
 # Storage — Longhorn
 
-Longhorn provides distributed block storage across the two worker nodes. It is the default `StorageClass`.
+Longhorn provides distributed block storage across all three nodes (host1 is untainted/schedulable too,
+not etcd-only — see `docs/ansible.md`). It is the default `StorageClass`.
 
 ## How it Works
 
-Longhorn manages `/dev/sdb` on each worker directly. The disk is **raw and unformatted** — do not partition or mount it. Longhorn discovers it automatically.
+None of the three hosts have a second physical disk — each is single-disk, so Longhorn does **not** manage
+a raw block device directly here (unlike the original VM-template design, which assumed a dedicated
+`/dev/sdb`). Instead, the Ansible `storage` role (`ansible/roles/storage/`) carves a dedicated LV out of
+each host's otherwise-unallocated LVM free space, formats it XFS, and mounts it at `/var/lib/longhorn`
+*before* Kubernetes/Longhorn ever gets involved — Longhorn just sees a normal, already-mounted filesystem
+path on each node. Per-host LV sizes (`ansible/host_vars/{host1,host2,host3}.yml`) come from real
+`lsblk`/`vgs` polling, not an assumption:
 
-With two workers and `defaultReplicaCount: 2`, every volume is replicated across both workers. This means:
-- One worker going down does **not** cause data loss
-- You lose ~50% of raw capacity to replication (400 GB raw × 2 workers / 2 replicas = ~400 GB usable)
+| Host | LV size | Notes |
+|------|---------|-------|
+| host1 | 800 GB | 1TB NVMe, ~846GB was free in the VG |
+| host2 | 380 GB | 512GB SATA SSD, ~397GB was free in the VG |
+| host3 | 380 GB | 512GB NVMe, ~390GB was free in the VG — **NIC currently links at only 100 Mb/s**, fix the cable/switch port before relying on this node for replica placement, replication over 100 Mb will bottleneck |
+
+With `defaultReplicaCount: 2` (`clusters/homelab/infrastructure/longhorn.yml`) across three nodes, every
+volume is replicated onto two of the three — one node going down does not cause data loss.
 
 ## Using Longhorn (PVCs)
 
@@ -27,7 +39,8 @@ spec:
       storage: 10Gi
 ```
 
-Longhorn only supports `ReadWriteOnce`. For `ReadWriteMany`, you need NFS on top — see the Longhorn docs for the NFS provisioner.
+Longhorn only supports `ReadWriteOnce`. For `ReadWriteMany`, you need NFS on top — see the Longhorn docs
+for the NFS provisioner.
 
 ## Longhorn UI
 
@@ -89,16 +102,25 @@ kubectl patch pvc my-data -p '{"spec":{"resources":{"requests":{"storage":"20Gi"
 
 The filesystem is resized automatically after the volume expands.
 
-## Adding a Disk
+## Growing a Node's Longhorn LV
 
-If you add more storage to a worker VM, you can add it to Longhorn via the UI under **Node → Edit Disks**, or by annotating the node:
+Each host's VG still has headroom left after the initial LV size (see table above). To grow it:
 
 ```bash
-kubectl -n longhorn-system edit nodes.longhorn.io ser5-worker-1
+ssh -i ~/.ssh/id_ed25519_homelab foo@<host-ip>
+sudo lvextend -L +100G /dev/rl_<hostname>/lv_longhorn
+sudo xfs_growfs /var/lib/longhorn
 ```
+
+Longhorn picks up the extra space automatically — no node re-annotation needed, unlike adding a whole new
+disk (see the Longhorn docs' **Node → Edit Disks** UI for that case, not applicable here since there's no
+second disk to add).
 
 ## What to Watch
 
-- Longhorn volumes become `Degraded` if a replica is unavailable (worker down, disk full). They recover automatically when the replica comes back.
-- Disk pressure: Longhorn reserves `storageMinimalAvailablePercentage: 10` — it will stop scheduling new replicas when less than 10% disk is free.
-- `/dev/sdb` must be visible to the VM. If a worker VM loses its second virtual disk (Proxmox config issue), Longhorn will mark that node's disk as unavailable.
+- Longhorn volumes become `Degraded` if a replica is unavailable (node down, disk full). They recover
+  automatically when the replica comes back.
+- Disk pressure: Longhorn reserves `storageMinimalAvailablePercentage: 10` — it will stop scheduling new
+  replicas when less than 10% disk is free.
+- host3's degraded NIC link (100 Mb/s instead of 1 Gb/s) will slow replica rebuilds/writes to that node
+  specifically — worth fixing before leaning on this cluster for anything storage-heavy.

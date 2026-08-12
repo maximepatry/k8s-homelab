@@ -5,38 +5,50 @@
   register: kubeadm_conf
 
 - name: Initialize cluster with kubeadm
+  # No --cluster-name flag exists on `kubeadm init` (it's a ClusterConfiguration
+  # field, only settable via --config) - naming the cluster would need a full
+  # kubeadm config file for one cosmetic value, not worth it here.
   command: >
     kubeadm init
     --pod-network-cidr={{ pod_cidr }}
     --service-cidr={{ service_cidr }}
-    --cluster-name={{ cluster_name }}
     --skip-phases=addon/kube-proxy
   when: not kubeadm_conf.stat.exists
   register: kubeadm_init
 
 # skip-phases=addon/kube-proxy because Cilium replaces kube-proxy
 
-- name: Create .kube directory for rocky user
+- name: Create .kube directory for foo user
   file:
-    path: /home/rocky/.kube
+    path: /home/foo/.kube
     state: directory
-    owner: rocky
-    group: rocky
+    owner: foo
+    group: foo
 
 - name: Copy admin kubeconfig
   copy:
     src: /etc/kubernetes/admin.conf
-    dest: /home/rocky/.kube/config
+    dest: /home/foo/.kube/config
     remote_src: true
-    owner: rocky
-    group: rocky
+    owner: foo
+    group: foo
     mode: "0600"
 
 - name: Fetch kubeconfig to local machine
+  # playbook_dir is ansible/playbooks/ - need two levels up to reach the
+  # repo root, not one (this previously landed at ansible/clusters/... and
+  # was never actually used by Terraform/kubectl at the documented path).
   fetch:
     src: /etc/kubernetes/admin.conf
-    dest: "{{ playbook_dir }}/../clusters/homelab/kubeconfig"
+    dest: "{{ playbook_dir }}/../../clusters/homelab/kubeconfig"
     flat: true
+
+- name: Restrict local kubeconfig permissions
+  file:
+    path: "{{ playbook_dir }}/../../clusters/homelab/kubeconfig"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
 
 - name: Generate join command
   command: kubeadm token create --print-join-command
@@ -48,3 +60,19 @@
     kubeadm_join_command: "{{ join_command.stdout }}"
   delegate_to: localhost
   delegate_facts: true
+
+# host1 is the strongest node in this fleet (Ryzen 7 6800H, 1TB NVMe) -
+# don't waste its capacity on etcd alone. Untainting is normal practice
+# for a single-control-plane homelab cluster.
+#
+# kubelet registers the node under its OS hostname (kickstart sets
+# `hostN.lab.local`, not the bare `hostN` used as the Ansible inventory
+# name) - {{ inventory_hostname }} alone does not match any real node and
+# silently no-ops here.
+- name: Remove control-plane NoSchedule taint so this node is schedulable
+  command: >
+    kubectl --kubeconfig /etc/kubernetes/admin.conf
+    taint nodes {{ inventory_hostname }}.lab.local node-role.kubernetes.io/control-plane:NoSchedule-
+  register: untaint_result
+  changed_when: "'untainted' in untaint_result.stdout"
+  failed_when: untaint_result.rc != 0 and 'not found' not in untaint_result.stderr

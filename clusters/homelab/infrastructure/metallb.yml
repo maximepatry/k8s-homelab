@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: metallb
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0" # before metallb-pool.yml, which needs its CRDs
 spec:
   project: default
   source:

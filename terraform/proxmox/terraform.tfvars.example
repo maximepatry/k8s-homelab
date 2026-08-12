@@ -1,6 +1,0 @@
-proxmox_endpoint     = "https://192.168.1.10:8006"
-proxmox_username     = "terraform@pve"
-proxmox_password     = "changeme"
-proxmox_tls_insecure = true
-ssh_public_key       = "ssh-ed25519 AAAA... you@host"
-vm_template          = "rocky9-cloud"

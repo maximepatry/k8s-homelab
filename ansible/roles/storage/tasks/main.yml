@@ -1,0 +1,33 @@
+---
+# Every host is single-disk (autopart --type=lvm --nohome from the
+# kickstart) with substantial unallocated space left in its LVM volume
+# group after root+swap. Carve a dedicated LV out of that free space for
+# Longhorn instead of assuming a second physical disk (there isn't one).
+- name: Check if the Longhorn LV already exists
+  command: "lvs --noheadings -o lv_name rl_{{ inventory_hostname }}/lv_longhorn"
+  register: longhorn_lv_check
+  changed_when: false
+  failed_when: false
+
+- name: Create Longhorn LV from free VG space
+  command:
+    cmd: "lvcreate -L {{ longhorn_lv_size_gb }}G -n lv_longhorn rl_{{ inventory_hostname }}"
+  when: longhorn_lv_check.rc != 0
+
+- name: Create XFS filesystem on the Longhorn LV
+  filesystem:
+    fstype: xfs
+    dev: "/dev/rl_{{ inventory_hostname }}/lv_longhorn"
+
+- name: Create /var/lib/longhorn mount point
+  file:
+    path: /var/lib/longhorn
+    state: directory
+    mode: "0755"
+
+- name: Mount the Longhorn LV persistently
+  mount:
+    path: /var/lib/longhorn
+    src: "/dev/rl_{{ inventory_hostname }}/lv_longhorn"
+    fstype: xfs
+    state: mounted

@@ -1,0 +1,6 @@
+# host3: single 512GB NVMe SSD, VG rl_host3 has ~390GB free after root+swap.
+# Leaves ~10GB headroom in the VG for future root growth. Note: this host's
+# NIC is currently linking at only 100 Mb/s (see README) - fix the cable/
+# switch port before relying on this LV for Longhorn replica placement,
+# replication over a 100 Mb link will bottleneck.
+longhorn_lv_size_gb: 380

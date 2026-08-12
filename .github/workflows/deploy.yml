@@ -1,7 +1,10 @@
 name: Deploy
 
 # Rolling/release pipeline — manually triggered.
-# Requires the self-hosted runner on the homelab.
+# Requires the self-hosted runner registered on the jumpbox (needs the
+# WireGuard tunnel up to reach the hosts/cluster on 10.10.10.0/24 - see
+# bare-metal/README.md, "Tunnel WireGuard pour le jumpbox").
+# See docs/ci-cd.md for runner setup instructions.
 # After Terraform and Ansible complete, ArgoCD is already watching the git repo
 # and will roll out any manifest changes automatically. This job waits for that
 # sync to confirm the cluster is fully converged before marking the run green.
@@ -44,24 +47,14 @@ jobs:
           terraform_version: "~1.9"
 
       - name: Init
-        run: terraform -chdir=terraform/proxmox init
-        env:
-          TF_VAR_proxmox_password: ${{ secrets.PROXMOX_PASSWORD }}
+        run: terraform -chdir=terraform/cluster-bootstrap init
 
       - name: Plan
-        run: terraform -chdir=terraform/proxmox plan -no-color -out=tfplan
-        env:
-          TF_VAR_proxmox_endpoint: ${{ secrets.PROXMOX_ENDPOINT }}
-          TF_VAR_proxmox_password: ${{ secrets.PROXMOX_PASSWORD }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: terraform -chdir=terraform/cluster-bootstrap plan -no-color -out=tfplan
 
       - name: Apply
         if: inputs.dry_run == 'false'
-        run: terraform -chdir=terraform/proxmox apply -auto-approve tfplan
-        env:
-          TF_VAR_proxmox_endpoint: ${{ secrets.PROXMOX_ENDPOINT }}
-          TF_VAR_proxmox_password: ${{ secrets.PROXMOX_PASSWORD }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: terraform -chdir=terraform/cluster-bootstrap apply -auto-approve tfplan
 
   ansible-run:
     name: Ansible playbook
@@ -103,11 +96,11 @@ jobs:
 
       - name: Wait for ArgoCD to sync all apps
         run: |
-          export KUBECONFIG="${HOME}/.kube/config"
+          export KUBECONFIG="$(pwd)/clusters/homelab/kubeconfig"
           echo "Waiting up to 5 minutes for all ArgoCD apps to sync..."
           timeout 300 bash -c '
             until kubectl -n argocd get applications -o json \
-              | jq -e "[.items[] | select(.metadata.name != \"app-of-apps\") | .status.sync.status] | length > 0 and all(. == \"Synced\")" \
+              | jq -e "[.items[] | .status.sync.status] | length > 0 and all(. == \"Synced\")" \
               > /dev/null 2>&1; do
               echo "  still waiting... ($(kubectl -n argocd get applications --no-headers 2>/dev/null | awk "{print \$2}" | sort | uniq -c | tr -s " " | sed "s/^ //"))"
               sleep 15
@@ -118,7 +111,7 @@ jobs:
 
       - name: Assert all apps healthy
         run: |
-          export KUBECONFIG="${HOME}/.kube/config"
+          export KUBECONFIG="$(pwd)/clusters/homelab/kubeconfig"
           UNHEALTHY=$(kubectl -n argocd get applications -o json \
             | jq -r '.items[] | select(.status.health.status != "Healthy") | .metadata.name')
           if [ -n "$UNHEALTHY" ]; then

@@ -9,8 +9,11 @@
   when: not kubelet_conf.stat.exists
 
 - name: Label node as worker
+  # kubelet registers under the OS hostname (hostN.lab.local from
+  # kickstart), not the bare inventory_hostname - see the matching note in
+  # control-plane/tasks/main.yml.
   command: >
-    kubectl --kubeconfig /home/ubuntu/.kube/config
-    label node {{ inventory_hostname }} node-role.kubernetes.io/worker=worker --overwrite
+    kubectl --kubeconfig /home/foo/.kube/config
+    label node {{ inventory_hostname }}.lab.local node-role.kubernetes.io/worker=worker --overwrite
   delegate_to: "{{ groups['control_plane'][0] }}"
   become: false

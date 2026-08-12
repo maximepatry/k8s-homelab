@@ -1,0 +1,25 @@
+# The metallb Helm chart (metallb.yml) installs the controller/speaker but
+# not an IP pool - MetalLB won't hand out any LoadBalancer IPs without this.
+# Range is the tail of the Opal's DHCP pool (10.10.10.2-249, see
+# bare-metal/router/dnsmasq-provisioning.conf) left outside it, to avoid a
+# MetalLB VIP colliding with a DHCP-assigned address.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb-pool
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1" # after metallb.yml installs the IPAddressPool/L2Advertisement CRDs
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/maximepatry/k8s-homelab
+    targetRevision: main
+    path: clusters/homelab/infrastructure/metallb-pool
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

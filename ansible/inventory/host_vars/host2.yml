@@ -1,0 +1,3 @@
+# host2: single 512GB SATA SSD, VG rl_host2 has ~397GB free after root+swap.
+# Leaves ~17GB headroom in the VG for future root growth.
+longhorn_lv_size_gb: 380
