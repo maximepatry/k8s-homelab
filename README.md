@@ -154,6 +154,7 @@ See [`docs/networking.md`](docs/networking.md) for MetalLB IP pool and Cilium co
 |-----|----------|
 | [`bare-metal/README.md`](bare-metal/README.md) | PXE/kickstart provisioning and the WireGuard jumpbox tunnel, via the GL.iNet Opal |
 | [`docs/architecture.md`](docs/architecture.md) | Full architecture diagrams |
+| [`docs/cluster-admin.md`](docs/cluster-admin.md) | How to connect and administer the cluster (kubectl, SSH, ArgoCD) |
 | [`docs/terraform.md`](docs/terraform.md) | Terraform cluster-bootstrap module reference |
 | [`docs/ansible.md`](docs/ansible.md) | Ansible roles and playbook details |
 | [`docs/argocd-gitops.md`](docs/argocd-gitops.md) | GitOps workflow, ArgoCD usage, prod/stage split |

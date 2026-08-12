@@ -14,6 +14,12 @@ spec:
         controller:
           service:
             type: LoadBalancer   # MetalLB will assign an IP from your pool
+          admissionWebhooks:
+            enabled: false   # avoids the chart's PreSync hook Job (cert-gen)
+            # hitting a fast-reconcile loop in this ArgoCD version where it
+            # never gets a chance to complete before being re-deleted - see
+            # docs/cluster-admin.md, "Forcing a stuck sync". Not needed for
+            # a homelab; this only disables Ingress spec validation.
   destination:
     server: https://kubernetes.default.svc
     namespace: ingress-nginx

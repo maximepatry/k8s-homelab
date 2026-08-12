@@ -26,3 +26,11 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # The chart's pre-upgrade/post-upgrade hook Jobs assume the
+      # ServiceAccount they need already exists, which is only true on an
+      # actual `helm upgrade` (not ArgoCD's first sync of a fresh install)
+      # - PreSync hooks run before regular Sync-phase resources, so the SA
+      # never exists in time and the hook Job permanently fails to schedule.
+      # Skipping hooks entirely is fine here: there's no prior Longhorn
+      # version to check compatibility against on a fresh install.
+      - SkipHooks=true
