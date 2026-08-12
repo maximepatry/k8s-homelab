@@ -1,0 +1,26 @@
+# infra-root doesn't recurse into subdirectories, so a plain manifest
+# (like the dashboard ConfigMap below) dropped under
+# clusters/homelab/infrastructure/monitoring/ needs its own wrapping
+# Application, same pattern as metallb-pool.yml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-dashboards
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1" # after monitoring.yml installs Grafana
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/maximepatry/k8s-homelab
+    targetRevision: main
+    path: clusters/homelab/infrastructure/monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

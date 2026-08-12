@@ -1,0 +1,92 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: "88.*"
+    helm:
+      valuesObject:
+        # By default this chart's admission webhook TLS cert is generated
+        # by a PreSync hook Job (kube-webhook-certgen) - the exact pattern
+        # that hit a fast-reconcile loop with ingress-nginx on this cluster
+        # (see clusters/homelab/infrastructure/ingress-nginx.yml) and never
+        # got a chance to complete. cert-manager is already running here,
+        # so use it instead and skip the Job-based path entirely.
+        prometheusOperator:
+          admissionWebhooks:
+            certManager:
+              enabled: true
+
+        # kubeadm binds controller-manager/scheduler/etcd to 127.0.0.1 by
+        # default - Prometheus (running in a pod) can never reach those
+        # targets, they'd just sit permanently "down". kube-proxy doesn't
+        # run at all (Cilium replaces it, kubeadm init --skip-phases=
+        # addon/kube-proxy) - scraping it would 100% fail too. Disable all
+        # four rather than ship known-broken targets.
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+        kubeProxy:
+          enabled: false
+
+        prometheus:
+          prometheusSpec:
+            retention: 15d
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: longhorn
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 20Gi
+
+        alertmanager:
+          alertmanagerSpec:
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: longhorn
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 5Gi
+
+        grafana:
+          # adminPassword intentionally not set - the chart auto-generates
+          # one into a Secret (admin-user/admin-password keys) rather than
+          # this being a plaintext value in a public repo. See
+          # docs/monitoring.md for how to retrieve it.
+          persistence:
+            enabled: true
+            type: sts
+            storageClassName: longhorn
+            accessModes: ["ReadWriteOnce"]
+            size: 5Gi
+          ingress:
+            enabled: true
+            ingressClassName: nginx
+            hosts:
+              - grafana.homelab.local
+            path: /
+          # sidecar.dashboards is already enabled by chart default (watches
+          # ConfigMaps labeled grafana_dashboard=1 in any namespace) - the
+          # custom dashboard lives in monitoring-dashboards.yml alongside
+          # this file.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

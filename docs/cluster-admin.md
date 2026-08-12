@@ -127,7 +127,13 @@ cilium status --brief 2>/dev/null || kubectl -n kube-system exec ds/cilium -- ci
 kubectl -n metallb-system get ipaddresspool,l2advertisement
 kubectl -n longhorn-system get nodes.longhorn.io
 kubectl get svc -A | grep LoadBalancer                 # should have IPs from 10.10.10.250-253, not <pending>
+kubectl -n monitoring get pods                          # Prometheus/Grafana/Alertmanager, all Running
 ```
+
+## Monitoring
+
+Prometheus + Grafana (`kube-prometheus-stack`) — see `docs/monitoring.md` for access (Ingress vs
+port-forward, admin password retrieval) and the custom "Homelab Overview" dashboard.
 
 ## Prod / stage namespaces
 

@@ -43,6 +43,7 @@ Notes:
 | Ingress | ingress-nginx |
 | Storage | Longhorn (LVM-carved LVs, no dedicated disk) |
 | TLS | cert-manager |
+| Monitoring | kube-prometheus-stack (Prometheus, Grafana, Alertmanager) |
 | GitOps | ArgoCD (app-of-apps, prod/stage split via AppProjects) |
 | IaC | Terraform (one-time ArgoCD bootstrap) + Ansible (OS + kubeadm) |
 | Jumpbox | Mac laptop, WireGuard tunnel into the provisioning LAN |
@@ -160,5 +161,6 @@ See [`docs/networking.md`](docs/networking.md) for MetalLB IP pool and Cilium co
 | [`docs/argocd-gitops.md`](docs/argocd-gitops.md) | GitOps workflow, ArgoCD usage, prod/stage split |
 | [`docs/networking.md`](docs/networking.md) | CNI, MetalLB, and ingress setup |
 | [`docs/storage.md`](docs/storage.md) | Longhorn storage configuration |
+| [`docs/monitoring.md`](docs/monitoring.md) | Prometheus/Grafana access, dashboards, what's not scraped yet |
 | [`docs/day2-operations.md`](docs/day2-operations.md) | Upgrades, backups, common ops |
 | [`docs/ci-cd.md`](docs/ci-cd.md) | GitHub Actions workflows and self-hosted runner setup |
