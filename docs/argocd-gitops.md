@@ -4,6 +4,11 @@ All infrastructure after the initial cluster bootstrap is managed by ArgoCD usin
 The git repository is the source of truth — do not make changes directly with `helm install` or
 `kubectl apply` for managed components.
 
+For a step-by-step walkthrough of installing a specific new component (deciding infra vs. workload, Helm
+chart vs. raw manifests, namespace/RBAC/AppProject whitelist, ingress, verification), see
+[`docs/adding-a-component.md`](adding-a-component.md) — the sections below are the reference, that doc is
+the task-oriented version worked through a real example.
+
 ArgoCD itself is installed by Terraform (`terraform/cluster-bootstrap/`, see `docs/terraform.md`), not
 manually — that's a one-time step, not something you repeat here.
 

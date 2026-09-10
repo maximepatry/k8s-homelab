@@ -1,0 +1,22 @@
+# Homepage (https://gethomepage.dev) - dashboard/start page for the homelab.
+# No official Helm chart exists upstream, so the raw manifests live in
+# apps/prod/homepage/ in this repo and are synced directly (see
+# docs/adding-a-component.md, "Option B: raw manifests").
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homepage
+  namespace: argocd
+spec:
+  project: prod
+  source:
+    repoURL: https://github.com/maximepatry/k8s-homelab
+    targetRevision: main
+    path: apps/prod/homepage
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

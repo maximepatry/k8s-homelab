@@ -159,6 +159,7 @@ See [`docs/networking.md`](docs/networking.md) for MetalLB IP pool and Cilium co
 | [`docs/terraform.md`](docs/terraform.md) | Terraform cluster-bootstrap module reference |
 | [`docs/ansible.md`](docs/ansible.md) | Ansible roles and playbook details |
 | [`docs/argocd-gitops.md`](docs/argocd-gitops.md) | GitOps workflow, ArgoCD usage, prod/stage split |
+| [`docs/adding-a-component.md`](docs/adding-a-component.md) | Step-by-step: installing a new component on the cluster, worked with Homepage |
 | [`docs/networking.md`](docs/networking.md) | CNI, MetalLB, and ingress setup |
 | [`docs/storage.md`](docs/storage.md) | Longhorn storage configuration |
 | [`docs/monitoring.md`](docs/monitoring.md) | Prometheus/Grafana access, dashboards, what's not scraped yet |

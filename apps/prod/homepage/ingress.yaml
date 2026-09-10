@@ -1,0 +1,22 @@
+# No TLS: no cert-manager ClusterIssuer is configured on this cluster yet
+# (see docs/networking.md) - plain HTTP on the isolated LAN, same as Grafana.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homepage
+  namespace: prod
+  labels:
+    app.kubernetes.io/name: homepage
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: "homepage.homelab.local"
+      http:
+        paths:
+          - path: "/"
+            pathType: Prefix
+            backend:
+              service:
+                name: homepage
+                port:
+                  number: 3000

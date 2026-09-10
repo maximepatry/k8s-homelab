@@ -16,6 +16,15 @@ spec:
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
+    # Homepage (apps/prod/homepage) needs cluster-wide read access to show
+    # pods/nodes/ingresses across all namespaces for its "mode: cluster"
+    # widget - that requires a ClusterRole/ClusterRoleBinding, which are
+    # cluster-scoped and would otherwise be blocked/pruned by this
+    # AppProject. Whitelisted deliberately, not a general RBAC loosening.
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
