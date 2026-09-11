@@ -1,0 +1,1 @@
+je comprends, alors en ce moment j'ai deux namespaces stage et prod, c'est bien ca?
