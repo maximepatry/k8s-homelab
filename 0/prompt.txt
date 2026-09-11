@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bxn3wqxsx</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-maximepatry-projects-k8s-homelab/d61904b7-7f52-45c1-b7c3-ec92be9517a6/tasks/bxn3wqxsx.output</output-file>
+<status>killed</status>
+<summary>Background command "Check installed ansible-core version details" was stopped</summary>
+</task-notification>
