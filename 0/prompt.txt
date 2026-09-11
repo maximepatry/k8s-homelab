@@ -1,0 +1,1 @@
+je veux deployer homepage (https://github.com/gethomepage/homepage/tree/dev) sur mon cluster. comment je m'y prend? cree un document dans /docs pour expliquer comment installer un composant sur le cluster
