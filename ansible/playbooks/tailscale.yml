@@ -1,0 +1,11 @@
+---
+# Optional add-on, separate from bootstrap.yml: installs the Tailscale
+# subnet router on host1 so the LAN (10.10.10.0/24) is reachable from
+# anywhere, not just the home network via the wg_mgmt WireGuard tunnel.
+# See bare-metal/README.md, "Tailscale", for the one-time `tailscale up`
+# step this playbook deliberately doesn't run.
+- name: Tailscale subnet router
+  hosts: tailscale_router
+  roles:
+    - role: tailscale
+      tags: tailscale

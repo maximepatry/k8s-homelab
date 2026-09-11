@@ -1,0 +1,40 @@
+---
+# Subnet router for 10.10.10.0/24, so the Mac jumpbox can reach the LAN over
+# Tailscale from anywhere, not just when on the home network with the
+# wg_mgmt WireGuard tunnel up. net.ipv4.ip_forward is already set to 1 by
+# the common role (ansible/roles/common) — nothing extra needed here for
+# IPv4 forwarding. firewalld is disabled cluster-wide (also common role), so
+# no firewall rule needed for Tailscale's own traffic either.
+- name: Enable IPv6 forwarding
+  # This LAN is IPv4-only (10.10.10.0/24, no IPv6 anywhere), but `tailscale
+  # up` warns "Subnet routes and exit nodes may not work correctly" without
+  # this even for a v4-only advertised route — cheap to set, avoids the
+  # ambiguity.
+  sysctl:
+    name: net.ipv6.conf.all.forwarding
+    value: "1"
+    sysctl_file: /etc/sysctl.d/tailscale.conf
+    reload: true
+
+- name: Add the Tailscale RPM repo
+  get_url:
+    url: https://pkgs.tailscale.com/stable/rhel/9/tailscale.repo
+    dest: /etc/yum.repos.d/tailscale.repo
+    mode: "0644"
+
+- name: Install tailscale
+  dnf:
+    name: tailscale
+    state: present
+
+- name: Enable and start tailscaled
+  systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+# `tailscale up --advertise-routes=10.10.10.0/24` is deliberately NOT run
+# here — it needs either interactive browser auth or an authkey, and an
+# authkey is a credential this repo won't store. Run it once by hand over
+# SSH (see bare-metal/README.md, "Tailscale") after this role has installed
+# the daemon; re-running this role afterwards is still fully idempotent.

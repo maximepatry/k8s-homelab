@@ -183,6 +183,49 @@ bail DHCP. Fixer une réservation DHCP statique pour la MAC de l'Opal
 plus tard - ce n'est pas gérable depuis ce repo, c'est côté routeur
 domestique.**
 
+## Tailscale (accès depuis n'importe où, sans dépendre du tunnel WireGuard)
+
+Le tunnel WireGuard ci-dessus ne fonctionne que depuis le réseau domestique (le Mac doit pouvoir joindre
+le WAN de l'Opal). Pour un accès depuis n'importe où sans dépendre de ça, `host1` fait office de "subnet
+router" Tailscale pour `10.10.10.0/24` - annoncé via `ansible/roles/tailscale/` (playbook dédié
+`ansible/playbooks/tailscale.yml`, groupe `tailscale_router` dans l'inventaire), gardé séparé de
+`bootstrap.yml`.
+
+**Pourquoi `host1` et pas l'Opal directement** : l'Opal tourne sur un SoC Siflower SF19A28 avec seulement
+128 Mo de RAM/flash (target OpenWrt `siflower-1806`, cf. plus haut) - support Tailscale incertain sur ce
+matériel. `host1` (Rocky Linux 9, x86_64, 32 Go RAM) a un paquet RPM officiel et zéro contrainte.
+
+### Mise en place (déjà faite, pour référence)
+
+```bash
+cd ansible
+ansible-playbook -i inventory/hosts.yml playbooks/tailscale.yml
+```
+
+Puis, une fois (interactif - `tailscale up` a besoin d'une authentification navigateur ou d'une authkey,
+volontairement non automatisé pour ne pas stocker de credential dans ce repo) :
+
+```bash
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10 "sudo tailscale up --advertise-routes=10.10.10.0/24 --hostname=host1-homelab"
+```
+
+Ouvrir l'URL affichée pour autoriser la machine sur le tailnet. **Étape facilement manquée** : la route
+`10.10.10.0/24` doit ensuite être approuvée manuellement dans la console web -
+https://login.tailscale.com/admin/machines → `host1-homelab` → *Subnet routes* → activer
+`10.10.10.0/24`. Sans ça, la machine apparaît "Connected" et se ping via son IP Tailscale, mais rien
+derrière (`10.10.10.x`) n'est routé - symptôme trompeur, ressemble à un problème réseau alors que c'est
+juste une route non approuvée.
+
+### Piège rencontré : VPN commercial en conflit
+
+Un VPN commercial actif en parallèle (NordVPN dans ce cas) empêche la route de sous-réseau de fonctionner
+même une fois approuvée - son kill switch / sa propre table de routage par défaut entre en concurrence
+avec la route Tailscale vers `10.10.10.0/24`. Si `ping 10.10.10.10` échoue alors que le device apparaît
+bien "Connected" dans Tailscale et que la route est approuvée, désactiver tout autre client VPN sur la
+machine avant de chercher plus loin.
+
+WireGuard (`wg_mgmt`) reste en place en parallèle comme filet de secours, pas remplacé.
+
 ## Mise à jour de WireGuard sur l'Opal
 
 Deux voies concrètes :

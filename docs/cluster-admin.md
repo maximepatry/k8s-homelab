@@ -16,8 +16,15 @@ you need one of:
   ```
   See `bare-metal/README.md`, "Tunnel WireGuard pour le jumpbox", for initial setup if this doesn't exist
   yet. Tear down with `sudo wg-quick down ~/.wireguard-homelab/mac-jumpbox.conf` when done.
+- **From anywhere** — Tailscale, connected to the same tailnet as `host1-homelab` (a subnet router for
+  `10.10.10.0/24`, set up via `ansible/roles/tailscale/`). No manual up/down needed once connected. See
+  `bare-metal/README.md`, "Tailscale", for setup and two gotchas: the advertised route needs manual
+  approval in the Tailscale admin console (silent failure otherwise — the machine shows "Connected" but
+  nothing behind it routes), and a commercial VPN client (e.g. NordVPN) running at the same time on the
+  jumpbox blocks the subnet route even after approval — disable it first if `ping 10.10.10.10` isn't
+  working despite everything else looking right.
 
-Verify either way with `ping 10.10.10.1` (the Opal) before troubleshooting anything else.
+Verify with `ping 10.10.10.1` (the Opal) before troubleshooting anything else, whichever path you used.
 
 ## Connecting with kubectl
 
