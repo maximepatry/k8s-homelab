@@ -1,0 +1,1 @@
+est-ce que je peux creer des projets ou namespace sur mes workers nodes?
