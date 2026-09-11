@@ -1,0 +1,43 @@
+c'est fait
+
+---
+
+oui, commit et push
+
+---
+
+/homelab-engineer
+
+---
+
+est-ce possible de configurer un point tailscale entre mon homelab et mon laptop ? je voudrais ne pas etre oblige d'etre connecte au glinet router
+
+---
+
+<task-notification>
+<task-id>bom7g9i9b</task-id>
+<tool-use-id>toolu_01UbCgbq69Y5wtTiAERTk6Yw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-maximepatry-projects-k8s-homelab/ff813df1-b2c0-49fb-8ab9-71de29fba000/tasks/bom7g9i9b.output</output-file>
+<status>completed</status>
+<summary>Background command "Run tailscale up on host1 to get the auth URL" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+qu'est-ce qu'il reste a faire
+
+---
+
+[Image #1] but ping 10.10.10.10 or kubectl get nodes does not work
+
+---
+
+comment je peux utiliser tailscale et norvpn en meme temps, supposons que je suis dans un cafe et que j'utilise le reseau public
+
+---
+
+oui, commit et push
+
+---
+
+comment est-ce que je fais pour avoir une connection https pour homepage
