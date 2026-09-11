@@ -48,3 +48,10 @@ data:
         provider: duckduckgo
         target: _blank
   docker.yaml: ""
+  # v2.3.0 added proxmox.yaml to its required skeleton config set (checked
+  # on every startup) - without it present, the container tries to copy its
+  # own skeleton file into /app/config, which fails EACCES because that dir
+  # is a read-only ConfigMap mount, and it CrashLoopBackOffs. Not used here
+  # (no Proxmox in this homelab, see bare-metal/README.md "History") - just
+  # needs to exist.
+  proxmox.yaml: ""
