@@ -1,0 +1,1 @@
+je voudrais commencer par deployer homepage (https://github.com/gethomepage/homepage/tree/dev) sur mon cluster k8s. comment je m'y prend. donne  moi la marche a suivre. cree un document en markdown /docs
