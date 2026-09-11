@@ -1,0 +1,103 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "01M277M7P4GWNRMDEFBJQJJGHQ",
+  "session_id": "ff813df1-b2c0-49fb-8ab9-71de29fba000",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-11T03:19:25.864137Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "39103cb7f40a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 182,
+    "cache_creation_tokens": 187849,
+    "cache_read_tokens": 9570473,
+    "output_tokens": 65699,
+    "api_call_count": 91
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01S8KT2jzHCrFJL88uKKw8mT",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "homelab-engineer"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "39103cb7f40a",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 16,
+        "end": 17,
+        "entry_ids": [
+          "3be37b15-88c8-46f3-8b05-c5806c824a97"
+        ],
+        "tool_use_id": "toolu_01S8KT2jzHCrFJL88uKKw8mT"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01S8KT2jzHCrFJL88uKKw8mT"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: homelab-engineer",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01UQAJ4omZYQaQbhH4G591h1",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "39103cb7f40a",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 416,
+        "end": 417,
+        "entry_ids": [
+          "8dff56d7-e9f6-4f24-ba40-ad5c0f02421a"
+        ],
+        "tool_use_id": "toolu_01UQAJ4omZYQaQbhH4G591h1"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01UQAJ4omZYQaQbhH4G591h1"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 100,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.json": 90,
+        ".claude/settings.local.json": 9
+      }
+    }
+  ]
+}
