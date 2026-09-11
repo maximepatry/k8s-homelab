@@ -31,14 +31,14 @@ changes — otherwise Prometheus/Alertmanager Custom Resources may fail validati
 
 Two ways:
 
-**Ingress** (no VPN/port-forward needed once set up): `http://grafana.homelab.local`. Add an `/etc/hosts`
+**Ingress** (no VPN/port-forward needed once set up): `https://grafana.homelab.local`. Add an `/etc/hosts`
 entry pointing it at the ingress-nginx LoadBalancer IP first:
 ```bash
 kubectl -n ingress-nginx get svc ingress-nginx-controller   # note the EXTERNAL-IP, e.g. 10.10.10.250
 echo "10.10.10.250 grafana.homelab.local" | sudo tee -a /etc/hosts
 ```
-No TLS — there's no cert-manager `ClusterIssuer` configured yet (see `docs/networking.md`), this is plain
-HTTP on the isolated LAN.
+TLS via the internal homelab CA (`cert-manager.io/cluster-issuer: homelab-ca`) — see `docs/networking.md`,
+"cert-manager", including the one-time step to import the root CA so your browser trusts it.
 
 **Port-forward** (works immediately, no DNS setup):
 ```bash

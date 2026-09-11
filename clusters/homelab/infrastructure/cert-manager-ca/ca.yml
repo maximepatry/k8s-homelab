@@ -1,0 +1,40 @@
+# Bootstrap issuer - exists only to sign the root CA certificate below, not
+# used by any Ingress directly.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: homelab-ca-bootstrap
+spec:
+  selfSigned: {}
+---
+# The root CA. 10 year lifetime - this is imported into trust stores by
+# hand (see docs/networking.md), so it should outlive routine renewal
+# cycles; the leaf certs it signs still renew normally and frequently.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: homelab-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: homelab-ca
+  secretName: homelab-ca-secret
+  duration: 87600h # 10y
+  renewBefore: 2160h # 90d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: homelab-ca-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# The ClusterIssuer every Ingress actually uses:
+# cert-manager.io/cluster-issuer: homelab-ca
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: homelab-ca
+spec:
+  ca:
+    secretName: homelab-ca-secret

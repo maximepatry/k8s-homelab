@@ -90,9 +90,18 @@ spec:
           ingress:
             enabled: true
             ingressClassName: nginx
+            # TLS via the internal homelab CA (clusters/homelab/infrastructure/
+            # cert-manager-ca) - not Let's Encrypt, homelab.local isn't a real
+            # domain. See docs/networking.md, "Trusting the homelab CA".
+            annotations:
+              cert-manager.io/cluster-issuer: homelab-ca
             hosts:
               - grafana.homelab.local
             path: /
+            tls:
+              - secretName: grafana-tls
+                hosts:
+                  - grafana.homelab.local
           # sidecar.dashboards is already enabled by chart default (watches
           # ConfigMaps labeled grafana_dashboard=1 in any namespace) - the
           # custom dashboard lives in monitoring-dashboards.yml alongside

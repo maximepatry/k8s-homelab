@@ -120,7 +120,7 @@ kind: Ingress
 metadata:
   name: my-app
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: homelab-ca   # see "cert-manager" below
 spec:
   ingressClassName: nginx
   tls:
@@ -151,42 +151,49 @@ For `.homelab.local` domains to resolve on your LAN, either:
 
 ## cert-manager
 
-cert-manager automates TLS certificate provisioning.
+cert-manager automates TLS certificate provisioning. `*.homelab.local` isn't a real, delegated domain, so
+Let's Encrypt is off the table — no HTTP-01 (nothing on the public internet can reach these hosts) and no
+DNS-01 (no real DNS zone to put a challenge TXT record in). This cluster uses a **private internal CA**
+instead, set up via `clusters/homelab/infrastructure/cert-manager-ca.yml` (Application) and
+`clusters/homelab/infrastructure/cert-manager-ca/ca.yml` (the actual resources):
 
-### ClusterIssuers
+1. `homelab-ca-bootstrap` — a throwaway `selfSigned` `ClusterIssuer`, exists only to sign the next step
+2. `homelab-ca` — a `Certificate` with `isCA: true`, signed by the bootstrap issuer; its key/cert land in
+   the `homelab-ca-secret` Secret (`cert-manager` namespace), 10-year lifetime
+3. `homelab-ca` — the real `ClusterIssuer` every Ingress uses, backed by that CA secret:
+   ```yaml
+   apiVersion: cert-manager.io/v1
+   kind: ClusterIssuer
+   metadata:
+     name: homelab-ca
+   spec:
+     ca:
+       secretName: homelab-ca-secret
+   ```
 
-After cert-manager is deployed, create issuers. For a homelab, two options:
+Any Ingress with `cert-manager.io/cluster-issuer: homelab-ca` plus a `tls:` block (see "Exposing an
+application" above) gets a leaf certificate signed by this root automatically — cert-manager handles
+renewal, nothing to do manually per-app. Grafana (`clusters/homelab/infrastructure/monitoring.yml`) and
+Homepage (`apps/prod/homepage/ingress.yaml`) are both wired to it already.
 
-**Self-signed CA (works offline, no public domain needed):**
-```yaml
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: selfsigned
-spec:
-  selfSigned: {}
-```
+### Trusting the homelab CA
 
-**Let's Encrypt (requires a public domain + DNS challenge or port 80 open):**
-```yaml
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: your@email.com
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-      - http01:
-          ingress:
-            class: nginx
-```
+Without importing the root, browsers still show "not private"/"not trusted" — the cert chain is valid,
+your device just doesn't know this root yet. One-time fix per device:
 
 ```bash
-# Verify issuer is Ready
+kubectl -n cert-manager get secret homelab-ca-secret -o jsonpath='{.data.ca\.crt}' | base64 -d > homelab-ca.crt
+
+# macOS: add to the login keychain and trust it for SSL
+security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db homelab-ca.crt
+```
+
+(On iOS/Android, AirDrop or otherwise transfer `homelab-ca.crt` and install it as a trusted root via
+Settings — exact steps vary by OS version.) Do this once per device you browse `*.homelab.local` from;
+every current and future service behind `homelab-ca` is then trusted, no per-site exception needed.
+
+```bash
+# Verify issuer is Ready, and a specific cert has actually been issued
 kubectl get clusterissuer
-kubectl describe certificate my-app-tls -n my-namespace
+kubectl describe certificate homepage-tls -n prod
 ```

@@ -1,5 +1,6 @@
-# No TLS: no cert-manager ClusterIssuer is configured on this cluster yet
-# (see docs/networking.md) - plain HTTP on the isolated LAN, same as Grafana.
+# TLS via the internal homelab CA (clusters/homelab/infrastructure/cert-manager-ca)
+# - not Let's Encrypt, homelab.local isn't a real domain. Browser trusts this
+# once the root CA is imported, see docs/networking.md.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -7,8 +8,14 @@ metadata:
   namespace: prod
   labels:
     app.kubernetes.io/name: homepage
+  annotations:
+    cert-manager.io/cluster-issuer: homelab-ca
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - "homepage.homelab.local"
+      secretName: homepage-tls
   rules:
     - host: "homepage.homelab.local"
       http:

@@ -1,0 +1,27 @@
+# A private internal CA, not Let's Encrypt - there's no real domain behind
+# *.homelab.local, so HTTP-01/DNS-01 challenges aren't possible (see
+# docs/networking.md). cert-manager bootstraps its own root CA via a
+# throwaway self-signed Issuer, then every *.homelab.local Ingress gets a
+# leaf cert signed by that root through the "homelab-ca" ClusterIssuer.
+# Import the root once (docs/networking.md, "Trusting the homelab CA") and
+# every service stops warning, no per-site exception needed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager-ca
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1" # after cert-manager.yml installs its CRDs
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/maximepatry/k8s-homelab
+    targetRevision: main
+    path: clusters/homelab/infrastructure/cert-manager-ca
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

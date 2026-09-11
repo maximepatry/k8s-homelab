@@ -72,8 +72,9 @@ kubectl -n ingress-nginx get svc ingress-nginx-controller   # note the EXTERNAL-
 echo "10.10.10.250 homepage.homelab.local" | sudo tee -a /etc/hosts
 ```
 
-No TLS by default — there's no cert-manager `ClusterIssuer` configured on this cluster yet (see
-`docs/networking.md`), same as Grafana. Plain HTTP is fine on this isolated LAN.
+Add `cert-manager.io/cluster-issuer: homelab-ca` plus a `tls:` block for HTTPS — a private internal CA
+issues the cert automatically, no real domain needed. See `docs/networking.md`, "cert-manager", including
+the one-time step to import the root CA into your browser's trust store.
 
 ## 5. Push it — nothing happens until it's on GitHub
 
@@ -114,9 +115,11 @@ chart, so this follows the raw-manifest path above:
   `:latest` — same convention as every Helm-based Application here pinning `targetRevision`), runs as
   non-root UID 1000, no persistent storage needed (fully stateless, config comes from the ConfigMap)
 - `apps/prod/homepage/service.yaml` — `ClusterIP`, port 3000
-- `apps/prod/homepage/ingress.yaml` — `homepage.homelab.local`, no TLS (matches Grafana's setup)
+- `apps/prod/homepage/ingress.yaml` — `homepage.homelab.local`, TLS via the internal `homelab-ca`
+  `ClusterIssuer` (same as Grafana)
 
 To customize what it shows, edit `apps/prod/homepage/configmap.yaml` (`services.yaml`/`bookmarks.yaml`),
 commit, push — no image rebuild needed, it's just a ConfigMap.
 
-Once synced and `/etc/hosts` is updated (step 4 above), open `http://homepage.homelab.local`.
+Once synced and `/etc/hosts` is updated (step 4 above), open `https://homepage.homelab.local` (after
+importing the root CA once, per `docs/networking.md`).
