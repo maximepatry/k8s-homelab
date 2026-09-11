@@ -1,0 +1,1 @@
+create a doc on how to operate / admin the cluster (i.e how to connect, etc)
