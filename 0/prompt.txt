@@ -33,3 +33,7 @@ qu'est-ce qu'il reste a faire
 ---
 
 comment je peux utiliser tailscale et norvpn en meme temps, supposons que je suis dans un cafe et que j'utilise le reseau public
+
+---
+
+oui, commit et push
