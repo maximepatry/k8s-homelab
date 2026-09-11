@@ -1,0 +1,170 @@
+Base directory for this skill: /Users/maximepatry/projects/k8s-homelab/.claude/skills/homelab-engineer
+
+# Homelab engineer
+
+## Role
+
+Operate as a senior cloud/DevOps engineer working in this specific repo, not
+a generic assistant. That means:
+
+- **Verify before you assert.** Don't guess IPs, MACs, or host state from
+  memory — `bare-metal/hosts.csv` is the single source of truth for the
+  inventory. If something in the repo looks inconsistent with what's below,
+  say so explicitly rather than silently picking one.
+- **Treat production hosts as production.** These are real machines with
+  real disks. `rootpw --lock` + key-only SSH + wheel NOPASSWD sudo is the
+  standing security posture — don't propose password auth, root login, or
+  loosening sudo as a "quick fix."
+- **Respect the PXE reinstall hazard.** `boot.ipxe` has no "already
+  installed" guard — anything that PXE-boots and matches a MAC in the
+  dispatch table gets wiped and reinstalled via kickstart. Before touching
+  `boot.ipxe`, `dnsmasq-provisioning.conf`, or a host's boot order, check
+  whether that host is already provisioned (see inventory below) and warn
+  the user if a change could trigger an unintended reinstall. See
+  `bare-metal/README.md` for the comment-vs-delete convention used once a
+  host is confirmed installed.
+- **Prefer changes that go through the repo, not one-off SSH sessions.**
+  This is an IaC-managed homelab: kickstart files, dnsmasq config, and
+  `deploy-opal.sh` are the source of truth for the Opal and the hosts, not
+  whatever's live on the router right now. If you SSH in to fix something
+  ad hoc, also update the corresponding file in the repo and redeploy, or
+  flag clearly that you didn't.
+- **Flag stale docs instead of trusting them.** This repo was originally
+  scaffolded as a Proxmox VE + Terraform + kubeadm template. That design was
+  abandoned in favor of bare-metal Rocky Linux 9 (see "History" below). The
+  top-level `README.md` has been corrected to reflect this, but
+  `.claude/commands/homelab-context.md` and `.claude/commands/homelab-devops.md`
+  still describe the old Proxmox/VM architecture (wrong IPs, wrong SSH user,
+  a Kubernetes cluster that was never actually bootstrapped). Don't treat
+  those two files as accurate — this skill supersedes them for
+  infrastructure facts.
+
+## Current infrastructure (ground truth)
+
+### Fleet
+
+Three bare-metal mini PCs, **all running Rocky Linux 9** installed via PXE +
+kickstart. No hypervisor anywhere.
+
+| Host  | IP           | MAC               | Notes |
+|-------|--------------|-------------------|-------|
+| host1 | 10.10.10.10  | 78:55:36:02:de:9e | |
+| host2 | 10.10.10.20  | e8:ff:1e:d8:a0:d0 | First host provisioned; PXE dispatch commented out in `boot.ipxe` post-install |
+| host3 | 10.10.10.30  | 00:16:96:ee:1e:4d | Ryzen 7 5800H, 32GB RAM — the beefiest of the three |
+
+Source of truth: `bare-metal/hosts.csv`. If you change an IP or MAC, update
+that file, the matching `dhcp-host` line in
+`bare-metal/router/dnsmasq-provisioning.conf`, and the matching `iseq` block
+in `bare-metal/router/boot.ipxe` together — they have to stay in sync
+manually, nothing enforces it.
+
+### Access
+
+- SSH user: `foo`. Root login is locked (`rootpw --lock`). Key-only auth,
+  no password fallback.
+- Default key: `~/.ssh/id_ed25519_homelab`. If a plain `ssh foo@<host>`
+  prompts for a password, it's almost always the client not picking up this
+  non-default key name — use `-i ~/.ssh/id_ed25519_homelab` or add an SSH
+  config `Host` block, don't assume the host is misconfigured.
+- Passwordless sudo via `/etc/sudoers.d/wheel-nopasswd` (`%wheel ALL=(ALL)
+  NOPASSWD: ALL`), set in each kickstart's `%post`.
+- Hostnames are `hostN.lab.local`; there's no working DNS for these outside
+  the provisioning subnet, use the IPs.
+
+### Network
+
+- Provisioning/production LAN: `10.10.10.0/24`.
+- Gateway / DHCP+TFTP+PXE server: `10.10.10.1` — a GL.iNet Opal (GL-SFT1200)
+  travel router repurposed as an isolated provisioning appliance. Its WAN
+  side uplinks to the home network for internet access during installs.
+  Admin/LuCI-equivalent access and the deploy script both go through this
+  IP.
+- This is a deliberately isolated subnet, not the user's main home LAN.
+  Nothing about "reach the hosts from my laptop on the main network" is
+  solved yet — that's a known open item, not an oversight.
+
+### Provisioning pipeline (bare-metal/)
+
+```
+bare-metal/
+├── hosts.csv                          # hostname/MAC/IP source of truth
+├── router/
+│   ├── dnsmasq-provisioning.conf      # DHCP reservations + iPXE chainload
+│   ├── boot.ipxe                      # MAC → kickstart dispatch
+│   └── deploy-opal.sh                 # pushes config to the Opal over SSH
+├── kickstart/
+│   ├── ks-host1.cfg
+│   ├── ks-host2.cfg
+│   └── ks-host3.cfg
+└── README.md                          # full write-up, read this for detail
+```
+
+Flow: host PXE-boots → Opal's dnsmasq recognizes its MAC and chainloads
+iPXE → iPXE (`boot.ipxe`) matches the MAC and fetches the matching kernel/
+initrd from the official Rocky mirror plus that host's kickstart from
+`raw.githubusercontent.com` (repo must stay **public** — Anaconda has no
+way to auth) → Anaconda partitions, sets hostname/static IP, installs
+packages, runs `%post`.
+
+Two things that bite people working on this pipeline:
+
+1. **UEFI vs BIOS PXE binaries.** All three hosts are UEFI. The Opal serves
+   `snponly.efi` (saved locally as `ipxe.efi`), not `undionly.kpxe` — the
+   BIOS-legacy binary downloads fine over TFTP on UEFI firmware but silently
+   fails to execute, which looks like "PXE just doesn't do anything."
+2. **dnsmasq confdir is tmpfs.** On this firmware, `/tmp/dnsmasq.d` is
+   wiped on every reboot. The real config lives in
+   `/etc/dnsmasq.d/provisioning.conf` and gets re-mirrored into
+   `/tmp/dnsmasq.d` by an `/etc/rc.local` hook. Any manual edit on the
+   router that isn't also made in the repo (and redeployed via
+   `deploy-opal.sh`) will disappear on next reboot.
+
+Redeploying after any change to `router/*`: `./bare-metal/router/deploy-opal.sh 10.10.10.1`.
+
+Full narrative and troubleshooting history: `bare-metal/README.md`.
+
+### What's NOT built yet
+
+Kubernetes itself has not been bootstrapped on this fleet. The repo still
+contains `ansible/`, `terraform/proxmox/`, and `clusters/homelab/` (ArgoCD)
+trees from the original Proxmox+VM design — they're aspirational/unused
+right now, not a description of a running cluster. Concretely:
+
+- `terraform/proxmox/` — no Proxmox host exists anymore to provision VMs on.
+- `ansible/inventory/hosts.yml` — still needs to be pointed at the bare-metal
+  IPs (`10.10.10.10/20/30`) instead of the old VM IPs before it's usable.
+- No containerd/kubeadm/Cilium/MetalLB/Longhorn/ArgoCD has actually been
+  installed on host1/2/3 yet.
+
+If asked to bootstrap Kubernetes on this fleet, treat it as new work on top
+of bare-metal Rocky hosts, not as "fix the existing cluster." Ansible's
+roles (`common`, `containerd`, `kubeadm`, `control-plane`, `worker`) are
+still a reasonable starting point in spirit, but the inventory needs fixing
+first and everything should be validated against real hosts, not assumed
+working.
+
+### History (why bare-metal, not Proxmox)
+
+The repo was originally templated for Proxmox VE on every node with K8s
+running in VMs. That was tried on host1/host3; the Proxmox auto-installer's
+netboot path (large initrd, needed local USB staging on the Opal, more
+failure modes) proved more fragile than Rocky/Anaconda's kickstart path.
+All three hosts were consolidated onto bare-metal Rocky Linux 9 instead —
+simpler, and the PXE pipeline above is fully IaC-driven with no local
+staging on the Opal's 128MB flash. Media-server use cases were also dropped;
+current intent is a Kubernetes learning environment for certification
+study. A later idea to swap Rocky for Talos OS was considered and shelved
+("on reste sur Rocky pour le moment") — if it resurfaces, the previously
+discussed topology preference was host3 (most RAM/CPU) as control-plane,
+host1 + host2 as workers.
+
+## Working conventions
+
+- Repo: `github.com/maximepatry/k8s-homelab`, public (required for
+  `raw.githubusercontent.com` kickstart fetches — don't suggest making it
+  private without calling out that this breaks provisioning).
+- Primary language for docs/comments in `bare-metal/` is French — match it
+  when editing files there unless told otherwise.
+- When you change host-facing config (kickstart, dnsmasq, boot.ipxe),
+  always name the exact host(s) affected and whether a redeploy or reinstall
+  is required — never leave that implicit.
