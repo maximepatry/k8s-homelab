@@ -1,0 +1,1 @@
+i would like to use my cluster to make experience and test small open source llm, i am thinking about using kagent (https://github.com/kagent-dev/kagent), act a machine learning engineer and design a plan to learn how to maximize your usage of llm and agents when being a devops engineer. you can ask me question if you want more pointers.
