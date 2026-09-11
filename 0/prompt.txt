@@ -1,0 +1,1 @@
+Vérifie le statut de sync de l'application homepage
