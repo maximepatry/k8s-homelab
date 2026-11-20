@@ -81,3 +81,16 @@
     path: /etc/selinux/config
     regexp: '^SELINUX=enforcing'
     replace: 'SELINUX=permissive'
+
+# Resolve the stable API endpoint name (control_plane_endpoint_name, see
+# group_vars/all.yml) to the current control-plane's IP on every node.
+# kubeadm init, kubeadm join, and every kubelet/admin kubeconfig use this
+# name, so moving the control-plane later = change the control_plane
+# inventory group + rerun this role, not rebuild the cluster. There's no
+# real DNS for lab.local (the Opal only does DHCP/PXE), hence /etc/hosts.
+- name: Point the Kubernetes API endpoint name at the control-plane
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '\s{{ control_plane_endpoint_name | regex_escape }}$'
+    line: "{{ control_plane_ip }} {{ control_plane_endpoint_name }}"
+    state: present

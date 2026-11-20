@@ -8,3 +8,22 @@ kube_proxy_enabled: false
 
 # OS — Rocky Linux 9 (kickstart-created user, root login locked)
 ansible_user: foo
+
+# Stable Kubernetes API endpoint (kubeadm --control-plane-endpoint). Baked
+# into every cert/kubeconfig at `kubeadm init` time as a NAME, not host2's IP,
+# so the control-plane can later move to another node by repointing this name
+# (the /etc/hosts entry written by the common role) instead of rebuilding the
+# cluster. The IP is derived from the inventory - whichever host is first in
+# the control_plane group - never hardcoded here.
+#
+# Two consumers can't resolve this name and use the IP directly instead (keep
+# them in sync with the control_plane group by hand):
+#   - Cilium's k8sServiceHost (terraform/cluster-bootstrap/main.tf AND
+#     clusters/homelab/infrastructure/cilium.yml)
+#   - the kubeconfig fetched to the Mac (clusters/homelab/kubeconfig), which
+#     the control-plane role rewrites to the IP so the Mac needs no
+#     /etc/hosts entry
+control_plane_endpoint_name: k8s-api.lab.local
+control_plane_endpoint_port: 6443
+control_plane_ip: "{{ hostvars[groups['control_plane'][0]]['ansible_host'] }}"
+control_plane_endpoint: "{{ control_plane_endpoint_name }}:{{ control_plane_endpoint_port }}"

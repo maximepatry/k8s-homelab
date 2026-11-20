@@ -1,2 +1,3 @@
 ---
+# Extra flags appended verbatim to `kubeadm init` (roles/control-plane).
 kubeadm_init_extra_args: ""

@@ -5,6 +5,9 @@
   register: kubelet_conf
 
 - name: Join cluster
+  # The join command targets the control-plane endpoint name
+  # (k8s-api.lab.local:6443, see group_vars/all.yml), resolved through the
+  # /etc/hosts entry the common role writes on every node.
   command: "{{ hostvars['localhost']['kubeadm_join_command'] }}"
   when: not kubelet_conf.stat.exists
 
