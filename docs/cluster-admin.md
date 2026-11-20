@@ -42,6 +42,12 @@ KUBECONFIG=~/.kube/config:/path/to/k8s-homelab/clusters/homelab/kubeconfig kubec
 kubectl config use-context kubernetes-admin@kubernetes
 ```
 
+The cluster's API endpoint is the name `k8s-api.lab.local:6443` (kubeadm `--control-plane-endpoint`),
+which only resolves on the nodes (Ansible-managed `/etc/hosts`). The fetched kubeconfig has its `server:`
+rewritten to host2's IP, `https://10.10.10.20:6443`, so **the Mac needs no `/etc/hosts` entry** — the IP is
+in the API server certificate's SANs. Only if you use an unmodified `admin.conf` copied by hand do you need
+`10.10.10.20 k8s-api.lab.local` in the Mac's `/etc/hosts`.
+
 If this file is missing or you suspect it's stale (e.g. after `kubeadm certs renew`), re-fetch it — see
 `docs/ansible.md` or `docs/day2-operations.md` ("Rotating Kubernetes Certificates").
 
@@ -53,8 +59,8 @@ hostname kubelet registers under, not the bare `host1`/`host2`/`host3` used else
 ## SSH to the hosts directly
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10   # host1, control-plane
-ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20   # host2, worker
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10   # host1, worker (+ Tailscale subnet router)
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20   # host2, control-plane
 ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.30   # host3, worker
 ```
 

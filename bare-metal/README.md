@@ -9,6 +9,17 @@ avérée plus fragile (installeur Proxmox plus gros, dépendance à une clé
 USB sur l'Opal, etc.) - Rocky/Anaconda est plus simple et plus fiable à
 netbooter.
 
+Rôles Kubernetes (gérés par Ansible, pas par ce dossier) : `host2` = control-plane dédié (taint
+`NoSchedule` conservé, c'est le nœud le plus léger), `host1` + `host3` = workers. Changer de rôle se fait
+au niveau kubeadm/Ansible, **sans réinstall** - rien ici ne dépend du rôle d'un host.
+
+**host3 et sa carte réseau USB** : le port intégré `enp2s0` de host3 est défectueux (il ne négocie jamais
+plus de 100 Mb/s, ce n'est pas le câble). L'IP statique `10.10.10.30` est désormais portée par un
+adaptateur USB 2.5/1GbE (profil NetworkManager `usb-eth`, MAC `c8:a3:62:a1:cb:1d`), configuré à la main
+après l'install. La MAC de `hosts.csv` / `dnsmasq-provisioning.conf` / `boot.ipxe` reste celle d'`enp2s0` :
+une réinstall PXE passe toujours par le port intégré, et le kickstart ne connaît pas l'adaptateur USB -
+il faudra recréer le profil `usb-eth` après une réinstall.
+
 ## Comment ça marche
 
 1. L'Opal est reconfiguré en routeur isolé (LAN `10.10.10.0/24`, WAN uplinké
