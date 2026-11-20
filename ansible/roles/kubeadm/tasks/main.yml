@@ -35,6 +35,25 @@
     - kubectl
   changed_when: false
 
+- name: Pin kubelet node IP to the host's LAN address
+  # Without --node-ip kubelet auto-detects its InternalIP from whatever
+  # interface holds the default route. When host3's static IP moved to a USB
+  # NIC (onboard port stuck at 100 Mb/s), kubelet briefly registered the
+  # Cilium-internal 10.0.1.x address instead - pin it to ansible_host.
+  ansible.builtin.copy:
+    dest: /etc/sysconfig/kubelet
+    content: "KUBELET_EXTRA_ARGS=--node-ip={{ ansible_host }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  register: kubelet_sysconfig
+
+- name: Restart kubelet to apply node IP
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+  when: kubelet_sysconfig.changed
+
 - name: Enable kubelet
   systemd:
     name: kubelet
