@@ -24,14 +24,14 @@
   # the real default (CRI enabled) on every run is safe: the next task
   # patches SystemdCgroup on top of it in the same play.
   shell: containerd config default > /etc/containerd/config.toml
-  notify: restart containerd
+  notify: Restart containerd
 
 - name: Enable SystemdCgroup in containerd
   replace:
     path: /etc/containerd/config.toml
     regexp: 'SystemdCgroup = false'
     replace: 'SystemdCgroup = true'
-  notify: restart containerd
+  notify: Restart containerd
 
 - name: Enable and start containerd
   systemd:

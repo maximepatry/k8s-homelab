@@ -1,3 +1,4 @@
+---
 # Two AppProjects enforce prod/stage isolation at the ArgoCD level: an
 # Application in the "stage" project cannot deploy into namespace "prod"
 # (or vice versa), regardless of what its manifests say.

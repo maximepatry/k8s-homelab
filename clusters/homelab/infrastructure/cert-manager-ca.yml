@@ -1,3 +1,4 @@
+---
 # A private internal CA, not Let's Encrypt - there's no real domain behind
 # *.homelab.local, so HTTP-01/DNS-01 challenges aren't possible (see
 # docs/networking.md). cert-manager bootstraps its own root CA via a

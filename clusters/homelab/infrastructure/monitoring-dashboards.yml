@@ -1,3 +1,4 @@
+---
 # infra-root doesn't recurse into subdirectories, so a plain manifest
 # (like the dashboard ConfigMap below) dropped under
 # clusters/homelab/infrastructure/monitoring/ needs its own wrapping

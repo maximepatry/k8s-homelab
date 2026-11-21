@@ -10,7 +10,7 @@
   # up` warns "Subnet routes and exit nodes may not work correctly" without
   # this even for a v4-only advertised route — cheap to set, avoids the
   # ambiguity.
-  sysctl:
+  ansible.posix.sysctl:
     name: net.ipv6.conf.all.forwarding
     value: "1"
     sysctl_file: /etc/sysctl.d/tailscale.conf

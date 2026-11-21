@@ -1,3 +1,4 @@
+---
 # Homepage (https://gethomepage.dev) - dashboard/start page for the homelab.
 # No official Helm chart exists upstream, so the raw manifests live in
 # apps/prod/homepage/ in this repo and are synced directly (see

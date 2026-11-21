@@ -1,0 +1,8 @@
+---
+# Collections used by the roles beyond ansible-core (ansible.builtin):
+#   ansible.posix.sysctl       - roles/common, roles/tailscale
+#   community.general.modprobe - roles/common
+# Install with: ansible-galaxy collection install -r ansible/requirements.yml
+collections:
+  - name: ansible.posix
+  - name: community.general

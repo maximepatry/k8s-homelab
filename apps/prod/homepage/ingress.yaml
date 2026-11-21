@@ -1,3 +1,4 @@
+---
 # TLS via the internal homelab CA (clusters/homelab/infrastructure/cert-manager-ca)
 # - not Let's Encrypt, homelab.local isn't a real domain. Browser trusts this
 # once the root CA is imported, see docs/networking.md.

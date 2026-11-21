@@ -1,3 +1,4 @@
+---
 # App-of-apps root for apps/prod. This root Application itself stays in the
 # default project (it's just bootstrap plumbing that creates other
 # Application resources) - the isolation is enforced by each *child*
