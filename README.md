@@ -11,15 +11,21 @@ the original VM-template sizing:
 |------|----|----------------|-----|-----|------|-----|
 | `host1` | 10.10.10.10 | Beelink SER-family (board `SER32001`) | AMD Ryzen 7 6800H - 8c/16t, up to 4.79 GHz | 32 GB | 1 TB NVMe (Samsung 970 EVO Plus) | 1 GbE (`eno1`), disabled onboard Wi-Fi (`wlp3s0`) |
 | `host2` | 10.10.10.20 | Beelink Mini S-family (board `MINIS13001`) | Intel N150 - 4c/4t, up to 3.6 GHz | 16 GB | 512 GB SATA SSD | 1 GbE (`enp1s0`) |
-| `host3` | 10.10.10.30 | generic OEM board (BIOS `5.19`) | AMD Ryzen 7 5800H - 8c/16t, up to 3.2 GHz | 32 GB | 512 GB NVMe SSD | `enp2s0` negotiated at only **100 Mb/s** (see note below), disabled onboard Wi-Fi (`wlp3s0`) |
+| `host3` | 10.10.10.30 | generic OEM board (BIOS `5.19`) | AMD Ryzen 7 5800H - 8c/16t, up to 3.2 GHz | 32 GB | 512 GB NVMe SSD | USB 2.5/1GbE adapter (NM profile `usb-eth`, MAC `c8:a3:62:a1:cb:1d`) carries the static IP; onboard `enp2s0` is faulty (100 Mb/s only, see note below), disabled onboard Wi-Fi (`wlp3s0`) |
 
 Notes:
 - **host1 and host3 are the two powerful nodes** (both 8c/16t AMD Ryzen mobile chips, 32 GB RAM), not
   `host3` alone - host1's CPU (6800H) is newer/faster than host3's (5800H) and its disk is 2x the size.
   `host2` (Intel N150, 4 threads, 16 GB) is clearly the lightest node. This corrects earlier internal notes
   that assumed host3 was "the beefiest" - it's mid-pack, not top.
-- `host3`'s NIC is linking at 100 Mb/s instead of the expected 1 Gb/s - worth checking the cable/switch
-  port before relying on it for anything storage- or throughput-sensitive (e.g. Longhorn replication).
+- `host3`'s onboard NIC (`enp2s0`) only ever negotiates 100 Mb/s - the port itself is faulty, not the
+  cable/switch. The fix is a USB 2.5/1GbE adapter (NetworkManager profile `usb-eth`, MAC
+  `c8:a3:62:a1:cb:1d`) that now holds the static `10.10.10.30` at full speed. PXE reinstalls still go
+  through the onboard `enp2s0` (its MAC is the one in `bare-metal/hosts.csv`), and the kickstart doesn't
+  configure the USB adapter - recreate the `usb-eth` profile after a reinstall. kubelet's `--node-ip` is
+  pinned by Ansible (`roles/kubeadm`) because this NIC move once made it pick a Cilium IP.
+- **Cluster roles follow the hardware:** `host2`, the lightest node, is the dedicated control-plane (keeps
+  the standard `NoSchedule` taint); `host1` and `host3` are the workers that run workloads.
 - None of the three hosts have a second physical disk - each is a single-disk machine with one LVM volume
   group (`autopart --type=lvm --nohome` from the kickstart), root (70 GB) + swap, and several hundred GB of
   **unallocated free space in the VG** on every host. Any per-node storage (e.g. Longhorn) needs to come
@@ -105,8 +111,11 @@ ansible -i inventory/hosts.yml all -m ping
 ansible-playbook -i inventory/hosts.yml playbooks/bootstrap.yml
 ```
 
-This carves Longhorn storage, installs containerd/kubeadm, initializes the control plane (host1), and
-joins the workers (host2, host3). See [`docs/ansible.md`](docs/ansible.md) for details.
+This carves Longhorn storage, installs containerd/kubeadm, initializes the control plane (host2), and
+joins the workers (host1, host3). The API server is reached at `k8s-api.lab.local:6443` (kubeadm
+`--control-plane-endpoint`, resolved via an Ansible-managed `/etc/hosts` entry on every node); the
+kubeconfig fetched to `clusters/homelab/kubeconfig` uses host2's IP instead, so the Mac needs no
+`/etc/hosts` change. See [`docs/ansible.md`](docs/ansible.md) for details.
 
 ### 4. Terraform — install ArgoCD
 
@@ -136,9 +145,9 @@ Home LAN: 192.168.2.0/24 -- Opal WAN side (DHCP)
                 ▼
 Provisioning/production LAN: 10.10.10.0/24
   Opal (gateway/DHCP/TFTP/PXE): 10.10.10.1
-  host1 (control-plane): 10.10.10.10
-  host2 (worker):        10.10.10.20
-  host3 (worker):        10.10.10.30
+  host1 (worker, Tailscale subnet router): 10.10.10.10
+  host2 (control-plane, tainted):          10.10.10.20  ← k8s-api.lab.local:6443
+  host3 (worker):                          10.10.10.30
   MetalLB pool:           10.10.10.250-253
 
 Ingress path:

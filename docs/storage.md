@@ -1,7 +1,9 @@
 # Storage — Longhorn
 
-Longhorn provides distributed block storage across all three nodes (host1 is untainted/schedulable too,
-not etcd-only — see `docs/ansible.md`). It is the default `StorageClass`.
+Longhorn provides distributed block storage across the two **worker** nodes, host1 and host3. host2 is the
+dedicated control-plane and keeps the `NoSchedule` taint, which Longhorn's DaemonSets don't tolerate — so no
+Longhorn manager/CSI pods run there and host2's LV sits idle (see `docs/ansible.md`). It is the default
+`StorageClass`.
 
 ## How it Works
 
@@ -16,11 +18,12 @@ path on each node. Per-host LV sizes (`ansible/host_vars/{host1,host2,host3}.yml
 | Host | LV size | Notes |
 |------|---------|-------|
 | host1 | 800 GB | 1TB NVMe, ~846GB was free in the VG |
-| host2 | 380 GB | 512GB SATA SSD, ~397GB was free in the VG |
-| host3 | 380 GB | 512GB NVMe, ~390GB was free in the VG — **NIC currently links at only 100 Mb/s**, fix the cable/switch port before relying on this node for replica placement, replication over 100 Mb will bottleneck |
+| host2 | 380 GB | 512GB SATA SSD, ~397GB was free in the VG — **unused by Longhorn** while host2 is the tainted control-plane (carved anyway so it can become a storage worker again without a layout change) |
+| host3 | 380 GB | 512GB NVMe, ~390GB was free in the VG — runs on a USB 2.5/1GbE adapter (onboard NIC is faulty, 100 Mb/s only), so replication runs at full link speed |
 
-With `defaultReplicaCount: 2` (`clusters/homelab/infrastructure/longhorn.yml`) across three nodes, every
-volume is replicated onto two of the three — one node going down does not cause data loss.
+With `defaultReplicaCount: 2` (`clusters/homelab/infrastructure/longhorn.yml`) across the two storage nodes,
+every volume has one replica on host1 and one on host3 — one node going down does not cause data loss, but
+the volume stays `Degraded` until that node comes back (there's no third storage node to rebuild onto).
 
 ## Using Longhorn (PVCs)
 
@@ -122,5 +125,6 @@ second disk to add).
   automatically when the replica comes back.
 - Disk pressure: Longhorn reserves `storageMinimalAvailablePercentage: 10` — it will stop scheduling new
   replicas when less than 10% disk is free.
-- host3's degraded NIC link (100 Mb/s instead of 1 Gb/s) will slow replica rebuilds/writes to that node
-  specifically — worth fixing before leaning on this cluster for anything storage-heavy.
+- host3's onboard NIC is faulty (100 Mb/s); the USB adapter carrying its static IP is what makes
+  replication fast. If host3 ever falls back to `enp2s0` (e.g. after a reinstall, before the `usb-eth`
+  NetworkManager profile is recreated), replica writes/rebuilds to it will crawl.

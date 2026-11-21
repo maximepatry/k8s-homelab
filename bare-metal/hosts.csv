@@ -1,6 +1,8 @@
 hostname,mac,ip
 # Les 3 hosts sont Rocky Linux 9 via kickstart. host2 deja installe -
 # dispatch PXE commente dans boot.ipxe (pas dans hosts.csv/dnsmasq).
+# host3 : MAC = port integre enp2s0 (utilise pour le PXE). En prod son IP
+# est portee par un adaptateur USB (c8:a3:62:a1:cb:1d) - voir README.md.
 host1,78:55:36:02:de:9e,10.10.10.10
 host2,e8:ff:1e:d8:a0:d0,10.10.10.20
 host3,00:16:96:ee:1e:4d,10.10.10.30

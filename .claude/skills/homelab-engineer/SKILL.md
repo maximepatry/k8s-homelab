@@ -68,9 +68,9 @@ kickstart. No hypervisor anywhere.
 
 | Host  | IP           | MAC               | Notes |
 |-------|--------------|-------------------|-------|
-| host1 | 10.10.10.10  | 78:55:36:02:de:9e | Kubernetes control-plane (untainted, also schedulable). Strongest node — Ryzen 7 6800H, 32GB, 1TB NVMe — see README hardware table, polled live 2026-08-11. |
-| host2 | 10.10.10.20  | e8:ff:1e:d8:a0:d0 | Kubernetes worker. First host provisioned; PXE dispatch commented out in `boot.ipxe` post-install. Intel N150, 16GB — lightest node. |
-| host3 | 10.10.10.30  | 00:16:96:ee:1e:4d | Kubernetes worker. Ryzen 7 5800H, 32GB — mid-pack, not "the beefiest" (that was a wrong assumption before hardware was actually polled; host1 is stronger). NIC currently links at only 100 Mb/s — check the cable/switch port before relying on this node for anything throughput-sensitive. |
+| host1 | 10.10.10.10  | 78:55:36:02:de:9e | Kubernetes worker (was the control-plane until the control-plane-host2 rebuild). Strongest node — Ryzen 7 6800H, 32GB, 1TB NVMe — see README hardware table, polled live 2026-08-11. Also the Tailscale subnet router (independent of its k8s role). |
+| host2 | 10.10.10.20  | e8:ff:1e:d8:a0:d0 | Kubernetes **control-plane**, dedicated: keeps the standard `NoSchedule` taint, no workloads. Intel N150, 4c/4t, 16GB — lightest node, which is exactly why it got this role. First host provisioned; PXE dispatch commented out in `boot.ipxe` post-install. |
+| host3 | 10.10.10.30  | 00:16:96:ee:1e:4d | Kubernetes worker. Ryzen 7 5800H, 32GB — mid-pack, not "the beefiest" (that was a wrong assumption before hardware was actually polled; host1 is stronger). Onboard `enp2s0` is faulty (100 Mb/s only) — the static IP now lives on a USB 2.5/1GbE adapter (NM profile `usb-eth`, MAC `c8:a3:62:a1:cb:1d`). The MAC in this table / `hosts.csv` is still the onboard one, which PXE reinstalls use; the kickstart doesn't set up the USB adapter. |
 
 kubelet registers each node under its OS hostname (`hostN.lab.local`, from the kickstart), not the bare
 `hostN` — `kubectl get nodes` shows `host1.lab.local` etc., and any `kubectl label`/`taint` command needs
@@ -157,9 +157,25 @@ Full narrative and troubleshooting history: `bare-metal/README.md`.
 `terraform/proxmox/` is gone (deleted, replaced by `terraform/cluster-bootstrap/` — see below).
 `ansible/inventory/hosts.yml` points at the real bare-metal IPs. The cluster is live:
 
-- kubeadm 1.31, host1 = control-plane (untainted/schedulable — it's the strongest node, not just an etcd
-  appliance), host2 + host3 = workers. `ansible-playbook playbooks/bootstrap.yml` is fully idempotent —
+- kubeadm 1.31, **host2 = single control-plane** (tainted `NoSchedule` — weakest node, so it only runs
+  the control-plane + system DaemonSets), **host1 + host3 = workers** (the two 8c/16t Ryzen nodes carry
+  workloads). This replaced the original host1-as-untainted-control-plane layout via a kubeadm-level
+  rebuild (branch `control-plane-host2`); if `kubectl get nodes` still shows host1 as control-plane, the
+  rebuild hasn't been run yet — check live state. `ansible-playbook playbooks/bootstrap.yml` is idempotent —
   safe to rerun, 0 changes expected on a healthy cluster.
+- **API endpoint is a name, not an IP:** `kubeadm init --control-plane-endpoint=k8s-api.lab.local:6443`.
+  The common role writes `<control-plane IP> k8s-api.lab.local` into `/etc/hosts` on every node, derived
+  from the first host in the `control_plane` inventory group (`group_vars/all.yml`). Certs and node
+  kubeconfigs reference the name, so a later move (join a new node with `kubeadm join --control-plane`,
+  repoint the name, remove the old member) is possible without a rebuild — impossible without an endpoint
+  set at init, which is why this migration had to be a rebuild. Three
+  places use the **IP** directly and must be updated by hand on a move: Cilium `k8sServiceHost` in
+  `terraform/cluster-bootstrap/main.tf` **and** `clusters/homelab/infrastructure/cilium.yml` (must agree),
+  and the Mac's `clusters/homelab/kubeconfig` (Ansible rewrites its `server:` to the IP, so the Mac needs
+  no `/etc/hosts` entry — it's regenerated on each bootstrap run).
+- System DaemonSets on the tainted host2: Cilium/cilium-envoy, metallb-speaker and node-exporter tolerate
+  the control-plane taint; Longhorn's DaemonSets don't, so host2's `/var/lib/longhorn` LV is idle. Don't
+  "fix" that by untainting host2 — keeping workloads off the N150 is the point.
 - Cilium is installed **twice, deliberately**: once via `terraform/cluster-bootstrap`'s
   `helm_release.cilium` (bootstrap-only, breaks the chicken-and-egg problem where ArgoCD's own pods can't
   schedule without a CNI — Cilium's agent DaemonSet uses `hostNetwork: true` so it alone can start before
@@ -195,7 +211,7 @@ staging on the Opal's 128MB flash. Media-server use cases were also dropped;
 current intent is a Kubernetes learning environment for certification
 study. A later idea to swap Rocky for Talos OS was considered and shelved
 ("on reste sur Rocky pour le moment") — if it resurfaces, use the real
-topology below (host1 as control-plane), not an assumption.
+topology above (host2 as control-plane, host1/host3 workers), not an assumption.
 
 ## Working conventions
 

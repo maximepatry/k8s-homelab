@@ -14,10 +14,10 @@ In `ansible/group_vars/all.yml`:
 kubernetes_version: "1.32"
 ```
 
-### 2. Upgrade the control plane (host1)
+### 2. Upgrade the control plane (host2)
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20
 
 # Update the repo to the new minor version (already done via group_vars + Ansible)
 # Or manually edit /etc/yum.repos.d/kubernetes.repo baseurl to v1.32
@@ -48,10 +48,10 @@ sudo systemctl restart kubelet
 
 ```bash
 # From your local machine — drain the node
-kubectl drain host2 --ignore-daemonsets --delete-emptydir-data
+kubectl drain host1.lab.local --ignore-daemonsets --delete-emptydir-data
 
 # SSH into the worker
-ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10
 sudo dnf install -y --disableexcludes=kubernetes kubeadm-1.32.* kubelet-1.32.* kubectl-1.32.*
 sudo dnf versionlock delete kubeadm kubelet kubectl
 sudo dnf versionlock add kubeadm kubelet kubectl
@@ -60,10 +60,11 @@ sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 
 # From local — uncordon
-kubectl uncordon host2
+kubectl uncordon host1.lab.local
 ```
 
-Repeat for `host3` (10.10.10.30).
+Repeat for `host3` (10.10.10.30). host1 is also the Tailscale subnet router — draining it doesn't touch
+Tailscale (a host service, not a pod), but rebooting it drops remote access via Tailscale until it's back.
 
 ---
 
@@ -72,7 +73,7 @@ Repeat for `host3` (10.10.10.30).
 Certificates created by kubeadm expire after 1 year. Check expiry:
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20
 sudo kubeadm certs check-expiration
 ```
 
@@ -87,10 +88,13 @@ sudo kubeadm kubeconfig user --client-name admin > /tmp/admin.conf
 sudo mv /tmp/admin.conf /etc/kubernetes/admin.conf
 ```
 
-Then re-fetch the kubeconfig locally:
+Then re-fetch the kubeconfig locally. The control-plane role does this and rewrites `server:` from
+`k8s-api.lab.local` to the control-plane IP (the Mac has no `/etc/hosts` entry for the name):
 ```bash
-scp -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10:/etc/kubernetes/admin.conf clusters/homelab/kubeconfig
+cd ansible && ansible-playbook playbooks/bootstrap.yml --tags control-plane
 ```
+A plain `scp` of `admin.conf` also works, but then fix the `server:` line by hand
+(`https://10.10.10.20:6443`) or add `10.10.10.20 k8s-api.lab.local` to the Mac's `/etc/hosts`.
 
 ---
 
@@ -149,10 +153,10 @@ Verify the host's boot order still prioritizes the local disk before rebooting a
 
 ## Backing Up etcd
 
-kubeadm clusters store all cluster state in etcd on the control plane (host1).
+kubeadm clusters store all cluster state in etcd on the control plane (host2).
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20
 
 sudo ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-backup-$(date +%Y%m%d).db \
   --endpoints=https://127.0.0.1:2379 \
@@ -166,7 +170,7 @@ sudo ETCDCTL_API=3 etcdctl snapshot status /tmp/etcd-backup-$(date +%Y%m%d).db -
 
 Copy the snapshot off the node:
 ```bash
-scp -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10:/tmp/etcd-backup-$(date +%Y%m%d).db ./backups/
+scp -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20:/tmp/etcd-backup-$(date +%Y%m%d).db ./backups/
 ```
 
 ---
@@ -177,9 +181,9 @@ There's no VM layer to tear down/recreate — "from scratch" means re-running ku
 
 ```bash
 # Reset kubeadm state on every host (control plane first, then workers)
-ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10 sudo kubeadm reset -f
-ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20 sudo kubeadm reset -f
-ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.30 sudo kubeadm reset -f
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.20 sudo kubeadm reset -f   # host2, control-plane
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.10 sudo kubeadm reset -f   # host1, worker
+ssh -i ~/.ssh/id_ed25519_homelab foo@10.10.10.30 sudo kubeadm reset -f   # host3, worker
 
 # Re-bootstrap
 cd ansible

@@ -1,4 +1,10 @@
 ---
 # host2: single 512GB SATA SSD, VG rl_host2 has ~397GB free after root+swap.
 # Leaves ~17GB headroom in the VG for future root growth.
+#
+# host2 is the tainted (NoSchedule) control-plane, and Longhorn's DaemonSets
+# don't tolerate that taint - so this LV is carved but sits unused by
+# Longhorn while host2 stays control-plane-only. Kept anyway so the node can
+# be turned back into a storage-carrying worker without re-running a
+# different storage layout.
 longhorn_lv_size_gb: 380

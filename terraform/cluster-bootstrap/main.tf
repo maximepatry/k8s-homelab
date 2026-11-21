@@ -8,6 +8,15 @@
 # ArgoCD adopts/reconciles this same Helm release once infra-root syncs, so
 # this is a one-time bootstrap install, not an ongoing Terraform-managed
 # resource (day-2 Cilium changes go through the ArgoCD Application, not here).
+#
+# k8sServiceHost: with kube-proxy skipped, Cilium itself is what makes the
+# in-cluster `kubernetes` Service work, so it has to reach the API server
+# directly. It's the control-plane's IP (host2, first host in the Ansible
+# control_plane group), deliberately NOT the kubeadm control-plane endpoint
+# name k8s-api.lab.local: that name only exists in each node's /etc/hosts,
+# and the CNI bootstrap is the one place where depending on name resolution
+# inside a pod buys nothing but a failure mode. If the control-plane ever
+# moves, update this value AND cilium.yml together with the inventory.
 resource "helm_release" "cilium" {
   name       = "cilium"
   repository = "https://helm.cilium.io"
@@ -21,7 +30,7 @@ resource "helm_release" "cilium" {
   }
   set {
     name  = "k8sServiceHost"
-    value = "10.10.10.10" # host1, the control-plane
+    value = "10.10.10.20" # host2, the control-plane - see the k8sServiceHost note above
   }
   set {
     name  = "k8sServicePort"

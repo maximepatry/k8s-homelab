@@ -8,11 +8,25 @@
   # No --cluster-name flag exists on `kubeadm init` (it's a ClusterConfiguration
   # field, only settable via --config) - naming the cluster would need a full
   # kubeadm config file for one cosmetic value, not worth it here.
+  #
+  # --control-plane-endpoint is a stable NAME (group_vars/all.yml), resolved
+  # via /etc/hosts by the common role. kubeadm bakes it into the API server
+  # cert and every kubeconfig (admin, kubelet, controller-manager, scheduler)
+  # instead of this node's IP - so a future control-plane move doesn't need a
+  # full rebuild. --apiserver-advertise-address pins the API server to the
+  # LAN IP (not whatever interface holds the default route - same class of
+  # bug as the kubelet --node-ip pin in roles/kubeadm). The cert SANs list
+  # both the name and the IP explicitly: the IP because Cilium's
+  # k8sServiceHost and the Mac's fetched kubeconfig use it directly.
   command: >
     kubeadm init
+    --control-plane-endpoint={{ control_plane_endpoint }}
+    --apiserver-advertise-address={{ ansible_host }}
+    --apiserver-cert-extra-sans={{ control_plane_endpoint_name }},{{ ansible_host }}
     --pod-network-cidr={{ pod_cidr }}
     --service-cidr={{ service_cidr }}
     --skip-phases=addon/kube-proxy
+    {{ kubeadm_init_extra_args }}
   when: not kubeadm_conf.stat.exists
   register: kubeadm_init
 
@@ -34,23 +48,38 @@
     group: foo
     mode: "0600"
 
-- name: Fetch kubeconfig to local machine
-  # playbook_dir is ansible/playbooks/ - need two levels up to reach the
-  # repo root, not one (this previously landed at ansible/clusters/... and
-  # was never actually used by Terraform/kubectl at the documented path).
-  fetch:
+- name: Read admin kubeconfig
+  ansible.builtin.slurp:
     src: /etc/kubernetes/admin.conf
-    dest: "{{ playbook_dir }}/../../clusters/homelab/kubeconfig"
-    flat: true
+  register: admin_kubeconfig
+  no_log: true
 
-- name: Restrict local kubeconfig permissions
-  file:
-    path: "{{ playbook_dir }}/../../clusters/homelab/kubeconfig"
+# admin.conf points at https://k8s-api.lab.local:6443. The Mac (jumpbox, over
+# WireGuard or Tailscale) has no DNS for lab.local, so the local copy is
+# rewritten to the control-plane's IP instead - it's in the API server cert's
+# SANs, so TLS still verifies. Net effect: no /etc/hosts edit needed on the
+# Mac. Written with copy (content-compared) rather than fetch + edit so a
+# rerun on a healthy cluster stays at 0 changes.
+#
+# playbook_dir is ansible/playbooks/ - need two levels up to reach the repo
+# root, not one (this previously landed at ansible/clusters/... and was never
+# actually used by Terraform/kubectl at the documented path).
+- name: Write kubeconfig to local machine (server rewritten to the control-plane IP)
+  ansible.builtin.copy:
+    content: >-
+      {{ admin_kubeconfig.content | b64decode
+         | replace('https://' ~ control_plane_endpoint,
+                   'https://' ~ control_plane_ip ~ ':' ~ control_plane_endpoint_port) }}
+    dest: "{{ playbook_dir }}/../../clusters/homelab/kubeconfig"
     mode: "0600"
   delegate_to: localhost
   become: false
+  no_log: true
 
 - name: Generate join command
+  # Prints `kubeadm join k8s-api.lab.local:6443 ...` (the control-plane
+  # endpoint, not this node's IP) - workers resolve it via the common role's
+  # /etc/hosts entry.
   command: kubeadm token create --print-join-command
   register: join_command
   changed_when: false
@@ -61,18 +90,35 @@
   delegate_to: localhost
   delegate_facts: true
 
-# host1 is the strongest node in this fleet (Ryzen 7 6800H, 1TB NVMe) -
-# don't waste its capacity on etcd alone. Untainting is normal practice
-# for a single-control-plane homelab cluster.
+# host2 (Intel N150, 4c/4t, 16 GB) is the lightest node - it's a dedicated
+# control-plane, so the standard kubeadm `NoSchedule` taint stays on and
+# workloads land on host1/host3 (both 8c/16t Ryzen, 32 GB). kubeadm init
+# already applies it; this just re-asserts it on every run in case someone
+# untainted the node by hand (the old host1 layout removed it here).
+#
+# System DaemonSets that must run on every node already tolerate it (checked
+# live on the old cluster): cilium + cilium-envoy (`operator: Exists`),
+# metallb-speaker (explicit control-plane toleration - though kubeadm's
+# node.kubernetes.io/exclude-from-external-load-balancers label keeps it
+# from announcing LB IPs from here), and prometheus-node-exporter
+# (`NoSchedule` + `Exists`). Longhorn's DaemonSets do NOT tolerate it, by
+# design - no workload volumes are attached on host2.
 #
 # kubelet registers the node under its OS hostname (kickstart sets
 # `hostN.lab.local`, not the bare `hostN` used as the Ansible inventory
-# name) - {{ inventory_hostname }} alone does not match any real node and
-# silently no-ops here.
-- name: Remove control-plane NoSchedule taint so this node is schedulable
-  command: >
+# name) - {{ inventory_hostname }} alone does not match any real node.
+- name: Read control-plane node taints
+  ansible.builtin.command: >
     kubectl --kubeconfig /etc/kubernetes/admin.conf
-    taint nodes {{ inventory_hostname }}.lab.local node-role.kubernetes.io/control-plane:NoSchedule-
-  register: untaint_result
-  changed_when: "'untainted' in untaint_result.stdout"
-  failed_when: untaint_result.rc != 0 and 'not found' not in untaint_result.stderr
+    get node {{ inventory_hostname }}.lab.local
+    -o jsonpath={.spec.taints[*].key}
+  register: cp_taints
+  changed_when: false
+
+- name: Keep control-plane NoSchedule taint (dedicated control-plane)
+  ansible.builtin.command: >
+    kubectl --kubeconfig /etc/kubernetes/admin.conf
+    taint nodes {{ inventory_hostname }}.lab.local
+    node-role.kubernetes.io/control-plane:NoSchedule
+  when: "'node-role.kubernetes.io/control-plane' not in cp_taints.stdout.split()"
+  changed_when: true

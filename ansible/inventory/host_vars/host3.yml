@@ -1,7 +1,12 @@
 ---
 # host3: single 512GB NVMe SSD, VG rl_host3 has ~390GB free after root+swap.
-# Leaves ~10GB headroom in the VG for future root growth. Note: this host's
-# NIC is currently linking at only 100 Mb/s (see README) - fix the cable/
-# switch port before relying on this LV for Longhorn replica placement,
-# replication over a 100 Mb link will bottleneck.
+# Leaves ~10GB headroom in the VG for future root growth. Note: the onboard
+# NIC (enp2s0) is faulty - it only ever negotiated 100 Mb/s - so the static
+# 10.10.10.30 now lives on a USB 2.5/1GbE adapter (NetworkManager profile
+# `usb-eth`, MAC c8:a3:62:a1:cb:1d), which links at full speed and is fine for
+# Longhorn replication. PXE reinstalls still go through the onboard enp2s0
+# (its MAC is the one in bare-metal/hosts.csv / boot.ipxe), and the kickstart
+# doesn't know about the USB adapter - the `usb-eth` profile would have to be
+# recreated after a reinstall. kubelet's --node-ip is pinned to ansible_host
+# (roles/kubeadm) because of this NIC move.
 longhorn_lv_size_gb: 380
