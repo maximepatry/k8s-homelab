@@ -51,7 +51,9 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.9"
-          terraform_wrapper: true
+          # The wrapper is a Node script and the Mac runner has no `node`
+          # on PATH (exit 127). Plan output goes to a file instead.
+          terraform_wrapper: false
 
       # State is local and lives in the operator's checkout; point this
       # checkout at the same file instead of planning against an empty state.
@@ -60,20 +62,24 @@ jobs:
 
       - name: Plan
         id: plan
-        run: terraform -chdir=terraform/cluster-bootstrap plan -input=false -lock-timeout=5m -no-color
+        run: |
+          set -o pipefail
+          terraform -chdir=terraform/cluster-bootstrap plan -input=false -lock-timeout=5m -no-color \
+            2>&1 | tee "$RUNNER_TEMP/plan.txt"
         continue-on-error: true
 
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         env:
-          # Passed via env, not interpolated into the script, so plan output
-          # can't inject JavaScript.
-          PLAN: ${{ steps.plan.outputs.stdout }}
+          # Read from a file / env, never interpolated into the script, so
+          # plan output can't inject JavaScript.
           OUTCOME: ${{ steps.plan.outcome }}
         with:
           script: |
-            const plan = process.env.PLAN || '';
+            const fs = require('fs');
+            const planFile = `${process.env.RUNNER_TEMP}/plan.txt`;
+            const plan = fs.existsSync(planFile) ? fs.readFileSync(planFile, 'utf8') : '';
             const status = process.env.OUTCOME === 'success' ? '✅' : '❌';
             const body = [
               `#### Terraform Plan ${status}`,
