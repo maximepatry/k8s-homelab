@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_01H7qk8KPD8C4KE9dW2KYo5a",
+  "agent_id": "ac05033566839842a",
+  "task_description": "Prepare control-plane-host2 branch",
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 87154,
+    "cache_read_tokens": 2492908,
+    "output_tokens": 32608,
+    "api_call_count": 34
+  },
+  "started_at": "2026-11-20T00:01:32.726678-05:00",
+  "completed_at": "2026-11-20T00:07:22.420355-05:00"
+}

@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_01RShm8wmNV3LGeeN7ZyLvJb",
+  "agent_id": "a17a0b62556668108",
+  "task_description": "Audit and write migration runbook",
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 114137,
+    "cache_read_tokens": 1763897,
+    "output_tokens": 31269,
+    "api_call_count": 24
+  },
+  "started_at": "2026-11-20T00:01:30.482358-05:00",
+  "completed_at": "2026-11-20T00:07:12.58983-05:00"
+}
