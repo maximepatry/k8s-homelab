@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_01AP9LTFnMEsWyyXYTCuBYnu",
+  "agent_id": "a0959a3feddf8c7f9",
+  "task_description": "Pre-flight check and runbook update",
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 81904,
+    "cache_read_tokens": 814543,
+    "output_tokens": 17483,
+    "api_call_count": 14
+  },
+  "started_at": "2026-11-20T22:07:13.363613-05:00",
+  "completed_at": "2026-11-20T22:10:27.706616-05:00"
+}
