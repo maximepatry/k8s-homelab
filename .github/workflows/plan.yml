@@ -1,10 +1,14 @@
 name: Plan
 
 # Terraform plan and Ansible dry-run on PRs and main pushes.
-# Requires the self-hosted runner registered on the jumpbox (needs the
-# WireGuard tunnel up to reach the hosts/cluster on 10.10.10.0/24 - see
+# Runs on the self-hosted runner on the Mac jumpbox (must be on the Opal LAN
+# or have the WireGuard tunnel up to reach 10.10.10.0/24 - see
 # bare-metal/README.md, "Tunnel WireGuard pour le jumpbox").
-# See docs/ci-cd.md for runner setup instructions.
+# See docs/ci-cd.md for runner setup and the required runner .env.
+#
+# SECURITY: this repo is public and the runner holds SSH keys + cluster-admin
+# credentials. Jobs only run for pushes and for PRs whose head branch lives in
+# this repo - a PR from a fork never reaches the self-hosted runner.
 
 on:
   pull_request:
@@ -17,42 +21,71 @@ on:
       - "terraform/**"
       - "ansible/**"
 
+permissions:
+  contents: read
+
+# Never run a plan/check concurrently with a deploy against the same cluster.
+concurrency:
+  group: homelab-cluster
+  cancel-in-progress: false
+
 jobs:
   terraform-plan:
     name: Terraform plan
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, homelab]
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check runner environment
+        run: |
+          : "${HOMELAB_TFSTATE:?HOMELAB_TFSTATE not set - see docs/ci-cd.md (runner .env)}"
+          : "${HOMELAB_KUBECONFIG:?HOMELAB_KUBECONFIG not set - see docs/ci-cd.md (runner .env)}"
+          test -f "$HOMELAB_TFSTATE"
+          test -f "$HOMELAB_KUBECONFIG"
+          echo "TF_VAR_kubeconfig_path=$HOMELAB_KUBECONFIG" >> "$GITHUB_ENV"
 
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.9"
           terraform_wrapper: true
 
+      # State is local and lives in the operator's checkout; point this
+      # checkout at the same file instead of planning against an empty state.
       - name: Init
-        run: terraform -chdir=terraform/cluster-bootstrap init
+        run: terraform -chdir=terraform/cluster-bootstrap init -input=false -backend-config="path=$HOMELAB_TFSTATE"
 
       - name: Plan
         id: plan
-        run: terraform -chdir=terraform/cluster-bootstrap plan -no-color -out=tfplan
+        run: terraform -chdir=terraform/cluster-bootstrap plan -input=false -lock-timeout=5m -no-color
         continue-on-error: true
 
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        env:
+          # Passed via env, not interpolated into the script, so plan output
+          # can't inject JavaScript.
+          PLAN: ${{ steps.plan.outputs.stdout }}
+          OUTCOME: ${{ steps.plan.outcome }}
         with:
           script: |
-            const plan = `${{ steps.plan.outputs.stdout }}`;
-            const status = '${{ steps.plan.outcome }}' === 'success' ? '✅' : '❌';
-            const body = `#### Terraform Plan ${status}
-            <details><summary>Show plan</summary>
-
-            \`\`\`hcl
-            ${plan.slice(0, 60000)}
-            \`\`\`
-
-            </details>
-            *Pushed by @${{ github.actor }}, action: \`${{ github.event_name }}\`*`;
+            const plan = process.env.PLAN || '';
+            const status = process.env.OUTCOME === 'success' ? '✅' : '❌';
+            const body = [
+              `#### Terraform Plan ${status}`,
+              '<details><summary>Show plan</summary>',
+              '',
+              '```hcl',
+              plan.slice(0, 60000),
+              '```',
+              '',
+              '</details>',
+              `*Pushed by ${context.actor}, action: \`${context.eventName}\`*`,
+            ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -82,25 +115,26 @@ jobs:
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
-      - name: Upload plan artifact
-        if: steps.plan.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan-${{ github.sha }}
-          path: terraform/cluster-bootstrap/tfplan
-          retention-days: 1
-
   ansible-check:
     name: Ansible dry-run
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, homelab]
+    defaults:
+      run:
+        # Run from ansible/ so ansible/ansible.cfg (become, SSH key, roles
+        # path) is picked up - it's only read from the current directory.
+        working-directory: ansible
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check mode (no changes applied)
+      # The control-plane role writes the kubeconfig into the checkout; seed
+      # it with the live one so check mode compares against reality.
+      - name: Seed kubeconfig
         run: |
-          ansible-playbook \
-            -i ansible/inventory/hosts.yml \
-            ansible/playbooks/bootstrap.yml \
-            --check --diff
+          : "${HOMELAB_KUBECONFIG:?HOMELAB_KUBECONFIG not set - see docs/ci-cd.md (runner .env)}"
+          install -m 600 "$HOMELAB_KUBECONFIG" ../clusters/homelab/kubeconfig
+
+      - name: Check mode (no changes applied)
+        run: ansible-playbook playbooks/bootstrap.yml --check --diff
         env:
           ANSIBLE_FORCE_COLOR: "1"

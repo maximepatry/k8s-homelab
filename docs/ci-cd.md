@@ -12,38 +12,72 @@ Three GitHub Actions workflows (`.github/workflows/`):
 reach the hosts and the cluster API (`10.10.10.0/24`), so they require a **self-hosted runner** — there's
 no GitHub-hosted alternative for a private homelab network.
 
-## Self-hosted runner setup (on the jumpbox)
+## Self-hosted runner setup (on the Mac jumpbox)
 
-The runner needs to run somewhere with a path into `10.10.10.0/24` — that's the Mac jumpbox, over the
-WireGuard tunnel from `bare-metal/README.md` ("Tunnel WireGuard pour le jumpbox"). Bring the tunnel up
-before the runner needs to reach anything (it does not manage the tunnel itself).
+The runner has to run somewhere with a path into `10.10.10.0/24` and that **survives a cluster rebuild** —
+that's the Mac jumpbox (on the Opal LAN, or over the WireGuard tunnel from `bare-metal/README.md`,
+"Tunnel WireGuard pour le jumpbox"). Never put it on host1/2/3: they get reset/rebooted during rebuilds.
 
-1. On GitHub: repo → **Settings → Actions → Runners → New self-hosted runner**, pick macOS/ARM64. Copy the
-   `./config.sh --url ... --token ...` command it gives you (the token is single-use, generated per
-   registration — don't reuse an old one from these docs).
+### Security first (public repo)
+
+This repo is public and the runner holds SSH keys to every node plus a cluster-admin kubeconfig. Two
+guards, both required:
+
+1. `plan.yml` jobs only run for pushes and for PRs whose head branch is in this repo
+   (`github.event.pull_request.head.repo.full_name == github.repository`) — fork PRs never reach the
+   runner. Keep that `if:` on any new job that targets `[self-hosted, homelab]`.
+2. Repo → **Settings → Actions → General → "Approval for running fork pull request workflows"** set to
+   **Require approval for all external contributors** (defense in depth for any future workflow).
+
+Also: workflows take inputs via `env:`, never `${{ }}`-interpolated into `run:` scripts.
+
+### Install
+
+1. Get a registration token (single-use, expires after 1h):
+   `gh api -X POST repos/maximepatry/k8s-homelab/actions/runners/registration-token -q .token`
+   (or repo → **Settings → Actions → Runners → New self-hosted runner**, macOS/ARM64).
 2. On the Mac:
    ```bash
    mkdir -p ~/actions-runner && cd ~/actions-runner
-   # paste the download + config.sh commands from step 1
+   curl -fsSLO https://github.com/actions/runner/releases/download/v<VER>/actions-runner-osx-arm64-<VER>.tar.gz
+   tar xzf actions-runner-osx-arm64-<VER>.tar.gz
+   ./config.sh --unattended --url https://github.com/maximepatry/k8s-homelab --token <TOKEN> \
+     --name mac-jumpbox --labels homelab --work _work
    ```
-3. When prompted for labels, add `homelab` (the workflows target `[self-hosted, homelab]` specifically —
-   the default `self-hosted` label alone isn't enough).
-4. Run it as a background service so it survives reboots/logout:
+   The `homelab` label is required — the workflows target `[self-hosted, homelab]`.
+3. Create `~/actions-runner/.env` (read by the runner at start, one `KEY=value` per line, no quotes):
+   ```
+   PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+   HOMELAB_TFSTATE=/Users/<you>/projects/k8s-homelab/terraform/cluster-bootstrap/terraform.tfstate
+   HOMELAB_KUBECONFIG=/Users/<you>/projects/k8s-homelab/clusters/homelab/kubeconfig
+   ```
+4. Run it as a launchd service (a LaunchAgent: runs as your user, so it uses your `~/.ssh` keys, and
+   only while you're logged in):
    ```bash
-   ./svc.sh install
-   ./svc.sh start
+   ./svc.sh install && ./svc.sh start
+   ./svc.sh status
    ```
-5. Make sure the runner's environment has what the jobs need on `PATH`: `terraform`, `ansible-playbook`,
-   `ansible-lint`, `kubectl`, `jq`. The runner inherits whatever shell environment it was installed under
-   — if you installed these via Homebrew under your normal user, a launchd-managed service may not pick up
-   `/opt/homebrew/bin` unless it's on the system `PATH`; verify with a workflow run rather than assuming.
 
-## Kubeconfig on the runner
+Tools the jobs need on that `PATH`: `terraform`, `ansible-playbook` (Homebrew `ansible` bundles
+`ansible.posix`/`community.general`), `kubectl`, `jq`.
 
-`terraform/cluster-bootstrap`'s providers and `deploy.yml`'s `argocd-verify` job both read
-`clusters/homelab/kubeconfig` from the runner's own checkout (workspace-relative, not `~/.kube/config`) —
-it's produced once by `ansible-playbook playbooks/bootstrap.yml` (the control-plane role fetches it) and
-persists on the runner's disk across workflow runs, since the self-hosted runner isn't ephemeral like a
-GitHub-hosted one. The very first `plan.yml`/`deploy.yml` run before any manual bootstrap has happened will
-fail for lack of this file — that's expected, not a bug; run the initial bootstrap by hand once (see
-`docs/ansible.md`, `docs/terraform.md`) before relying on the pipeline for it.
+## State and kubeconfig on the runner
+
+Both live in **your** checkout, not the runner's — the runner's checkout under `~/actions-runner/_work`
+is throwaway:
+
+- **Terraform state** is local (`terraform/cluster-bootstrap/terraform.tfstate`, gitignored).
+  `backend.tf` declares an explicit `local` backend so CI can run
+  `terraform init -backend-config="path=$HOMELAB_TFSTATE"` and share that one file (local-backend locking
+  prevents a CI run and a manual `terraform apply` from writing at once). Without it, CI would plan
+  against an empty state and try to re-create Cilium/ArgoCD.
+- **kubeconfig**: Terraform and `kubectl` read `$HOMELAB_KUBECONFIG` directly. Ansible jobs copy it into
+  the checkout first (the control-plane role writes `clusters/homelab/kubeconfig`), and `deploy.yml`
+  copies it back if the playbook rewrote it (e.g. after a cluster rebuild).
+- Ansible steps run with `working-directory: ansible` so `ansible/ansible.cfg` (become, SSH key, roles
+  path) is actually loaded — it's only read from the current directory.
+- Plan and Deploy share a `concurrency: homelab-cluster` group, so they never run against the cluster at
+  the same time.
+
+The very first run needs an existing cluster and kubeconfig — bootstrap by hand once (see
+`docs/ansible.md`, `docs/terraform.md`) before relying on the pipeline.
