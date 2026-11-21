@@ -3,6 +3,12 @@
 #   ansible.posix.sysctl       - roles/common, roles/tailscale
 #   community.general.modprobe - roles/common
 # Install with: ansible-galaxy collection install -r ansible/requirements.yml
+#
+# Pinned to the major line that supports CI's ansible-core 2.17
+# (validate.yml): community.general 13.x needs ansible-core >= 2.18.
+# Bump both together with the ansible-core pin in validate.yml.
 collections:
   - name: ansible.posix
+    version: ">=2.0.0,<3.0.0"
   - name: community.general
+    version: ">=12.0.0,<13.0.0"

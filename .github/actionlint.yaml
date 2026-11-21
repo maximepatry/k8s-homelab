@@ -1,0 +1,5 @@
+---
+# Custom labels of the self-hosted runner (docs/ci-cd.md)
+self-hosted-runner:
+  labels:
+    - homelab

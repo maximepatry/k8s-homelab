@@ -1,10 +1,10 @@
 name: Deploy
 
-# Rolling/release pipeline — manually triggered.
-# Requires the self-hosted runner registered on the jumpbox (needs the
-# WireGuard tunnel up to reach the hosts/cluster on 10.10.10.0/24 - see
+# Rolling/release pipeline - manually triggered.
+# Runs on the self-hosted runner on the Mac jumpbox (must be on the Opal LAN
+# or have the WireGuard tunnel up to reach 10.10.10.0/24 - see
 # bare-metal/README.md, "Tunnel WireGuard pour le jumpbox").
-# See docs/ci-cd.md for runner setup instructions.
+# See docs/ci-cd.md for runner setup and the required runner .env.
 # After Terraform and Ansible complete, ArgoCD is already watching the git repo
 # and will roll out any manifest changes automatically. This job waits for that
 # sync to confirm the cluster is fully converged before marking the run green.
@@ -22,7 +22,7 @@ on:
           - ansible
           - all
       ansible_tags:
-        description: "Ansible tags (e.g. containerd, kubeadm) — blank = full playbook"
+        description: "Ansible tags (e.g. containerd, kubeadm) - blank = full playbook"
         required: false
         default: ""
       dry_run:
@@ -34,6 +34,13 @@ on:
           - "false"
           - "true"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: homelab-cluster
+  cancel-in-progress: false
+
 jobs:
   terraform-apply:
     name: Terraform apply
@@ -42,19 +49,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check runner environment
+        run: |
+          : "${HOMELAB_TFSTATE:?HOMELAB_TFSTATE not set - see docs/ci-cd.md (runner .env)}"
+          : "${HOMELAB_KUBECONFIG:?HOMELAB_KUBECONFIG not set - see docs/ci-cd.md (runner .env)}"
+          test -f "$HOMELAB_TFSTATE"
+          test -f "$HOMELAB_KUBECONFIG"
+          echo "TF_VAR_kubeconfig_path=$HOMELAB_KUBECONFIG" >> "$GITHUB_ENV"
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.9"
 
+      # State is local and lives in the operator's checkout; share that file.
       - name: Init
-        run: terraform -chdir=terraform/cluster-bootstrap init
+        run: terraform -chdir=terraform/cluster-bootstrap init -input=false -backend-config="path=$HOMELAB_TFSTATE"
 
       - name: Plan
-        run: terraform -chdir=terraform/cluster-bootstrap plan -no-color -out=tfplan
+        run: terraform -chdir=terraform/cluster-bootstrap plan -input=false -lock-timeout=5m -no-color -out=tfplan
 
       - name: Apply
         if: inputs.dry_run == 'false'
-        run: terraform -chdir=terraform/cluster-bootstrap apply -auto-approve tfplan
+        run: terraform -chdir=terraform/cluster-bootstrap apply -input=false -lock-timeout=5m -auto-approve tfplan
 
   ansible-run:
     name: Ansible playbook
@@ -65,21 +81,39 @@ jobs:
       !cancelled() &&
       (inputs.target == 'ansible' || inputs.target == 'all') &&
       (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped')
+    defaults:
+      run:
+        # ansible/ansible.cfg is only read from the current directory.
+        working-directory: ansible
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run playbook
+      - name: Seed kubeconfig
         run: |
-          CMD="ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/bootstrap.yml"
-          if [ -n "${{ inputs.ansible_tags }}" ]; then
-            CMD="$CMD --tags ${{ inputs.ansible_tags }}"
-          fi
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            CMD="$CMD --check --diff"
-          fi
-          $CMD
+          : "${HOMELAB_KUBECONFIG:?HOMELAB_KUBECONFIG not set - see docs/ci-cd.md (runner .env)}"
+          install -m 600 "$HOMELAB_KUBECONFIG" ../clusters/homelab/kubeconfig
+
+      - name: Run playbook
         env:
           ANSIBLE_FORCE_COLOR: "1"
+          # Inputs via env, never interpolated into the shell script.
+          TAGS: ${{ inputs.ansible_tags }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(playbooks/bootstrap.yml)
+          if [ -n "$TAGS" ]; then args+=(--tags "$TAGS"); fi
+          if [ "$DRY_RUN" = "true" ]; then args+=(--check --diff); fi
+          ansible-playbook "${args[@]}"
+
+      # If the playbook (re)wrote the kubeconfig (e.g. after a rebuild), copy
+      # it back so the operator's checkout and later runs use the new one.
+      - name: Sync kubeconfig back
+        if: inputs.dry_run == 'false'
+        run: |
+          if ! cmp -s ../clusters/homelab/kubeconfig "$HOMELAB_KUBECONFIG"; then
+            install -m 600 ../clusters/homelab/kubeconfig "$HOMELAB_KUBECONFIG"
+            echo "kubeconfig updated at $HOMELAB_KUBECONFIG"
+          fi
 
   argocd-verify:
     name: Verify ArgoCD sync
@@ -92,26 +126,29 @@ jobs:
       (needs.ansible-run.result == 'success' || needs.ansible-run.result == 'skipped') &&
       (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped')
     steps:
-      - uses: actions/checkout@v4
-
       - name: Wait for ArgoCD to sync all apps
         run: |
-          export KUBECONFIG="$(pwd)/clusters/homelab/kubeconfig"
+          export KUBECONFIG="${HOMELAB_KUBECONFIG:?HOMELAB_KUBECONFIG not set - see docs/ci-cd.md}"
           echo "Waiting up to 5 minutes for all ArgoCD apps to sync..."
-          timeout 300 bash -c '
-            until kubectl -n argocd get applications -o json \
-              | jq -e "[.items[] | .status.sync.status] | length > 0 and all(. == \"Synced\")" \
-              > /dev/null 2>&1; do
-              echo "  still waiting... ($(kubectl -n argocd get applications --no-headers 2>/dev/null | awk "{print \$2}" | sort | uniq -c | tr -s " " | sed "s/^ //"))"
-              sleep 15
-            done
-          '
+          # Plain deadline loop: macOS (the runner) has no `timeout`.
+          deadline=$((SECONDS + 300))
+          until kubectl -n argocd get applications -o json \
+            | jq -e '[.items[] | .status.sync.status] | length > 0 and all(. == "Synced")' \
+            > /dev/null 2>&1; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Timed out waiting for ArgoCD sync"
+              kubectl -n argocd get applications
+              exit 1
+            fi
+            echo "  still waiting... ($(kubectl -n argocd get applications --no-headers 2>/dev/null | awk '{print $2}' | sort | uniq -c | tr -s ' ' | sed 's/^ //'))"
+            sleep 15
+          done
           echo "All apps synced. Checking health..."
           kubectl -n argocd get applications
 
       - name: Assert all apps healthy
         run: |
-          export KUBECONFIG="$(pwd)/clusters/homelab/kubeconfig"
+          export KUBECONFIG="$HOMELAB_KUBECONFIG"
           UNHEALTHY=$(kubectl -n argocd get applications -o json \
             | jq -r '.items[] | select(.status.health.status != "Healthy") | .metadata.name')
           if [ -n "$UNHEALTHY" ]; then
