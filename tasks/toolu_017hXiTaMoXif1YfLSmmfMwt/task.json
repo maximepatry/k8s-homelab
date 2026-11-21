@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_017hXiTaMoXif1YfLSmmfMwt",
+  "agent_id": "a8c9b2354b3235ae6",
+  "task_description": "Rebase migration branch, open draft PR",
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 52689,
+    "cache_read_tokens": 1712281,
+    "output_tokens": 13703,
+    "api_call_count": 32
+  },
+  "started_at": "2026-11-20T22:31:12.275965-05:00",
+  "completed_at": "2026-11-20T22:35:46.379826-05:00"
+}
