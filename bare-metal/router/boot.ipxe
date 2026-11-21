@@ -12,12 +12,15 @@
 set repo_base https://raw.githubusercontent.com/maximepatry/k8s-homelab/main/bare-metal
 set rocky_base https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os
 
-iseq ${mac} 78:55:36:02:de:9e && goto host1 ||
-# host2 commented out - already installed, PXE dispatch removed to avoid
-# an accidental reinstall loop. Uncomment (and fix its BIOS boot order
-# again if needed) to reprovision.
+# All three hosts commented out - already installed, PXE dispatch removed
+# to avoid an accidental reinstall (wipes the disk). host1/host3 retired
+# 2026-11-20 after a power outage: a BIOS reset to PXE-first boot would
+# otherwise have reinstalled host1 and destroyed the cluster's etcd/CA.
+# Uncomment one line (and fix its BIOS boot order again if needed) to
+# reprovision that host.
+# iseq ${mac} 78:55:36:02:de:9e && goto host1 ||
 # iseq ${mac} e8:ff:1e:d8:a0:d0 && goto host2 ||
-iseq ${mac} 00:16:96:ee:1e:4d && goto host3 ||
+# iseq ${mac} 00:16:96:ee:1e:4d && goto host3 ||
 goto unknown
 
 :host1
