@@ -1,3 +1,4 @@
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -81,6 +82,11 @@ spec:
           # one into a Secret (admin-user/admin-password keys) rather than
           # this being a plaintext value in a public repo. See
           # docs/monitoring.md for how to retrieve it.
+          #
+          # sidecar.dashboards is already enabled by chart default (watches
+          # ConfigMaps labeled grafana_dashboard=1 in any namespace) - the
+          # custom dashboard lives in monitoring-dashboards.yml alongside
+          # this file.
           persistence:
             enabled: true
             type: sts
@@ -102,10 +108,6 @@ spec:
               - secretName: grafana-tls
                 hosts:
                   - grafana.homelab.local
-          # sidecar.dashboards is already enabled by chart default (watches
-          # ConfigMaps labeled grafana_dashboard=1 in any namespace) - the
-          # custom dashboard lives in monitoring-dashboards.yml alongside
-          # this file.
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

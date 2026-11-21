@@ -40,6 +40,11 @@ jobs:
       - name: Install tools
         run: pip install ansible-core==2.17.* ansible-lint==24.*
 
+      # ansible-core ships only ansible.builtin; the roles also use
+      # ansible.posix.sysctl and community.general.modprobe.
+      - name: Install collections
+        run: ansible-galaxy collection install -r ansible/requirements.yml
+
       - name: Lint
         run: ansible-lint ansible/
         env:

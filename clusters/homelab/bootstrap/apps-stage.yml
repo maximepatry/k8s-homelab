@@ -1,3 +1,4 @@
+---
 # App-of-apps root for apps/stage. Same pattern as apps-prod.yml - stays in
 # the default project, isolation is enforced by each child Application
 # under apps/stage/*.yml declaring `project: stage` (see projects.yml).

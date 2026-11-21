@@ -8,7 +8,7 @@ idempotent — safe to rerun. Run from the jumpbox, over the WireGuard tunnel in
 
 ```bash
 pip install ansible
-ansible-galaxy collection install ansible.posix community.general
+ansible-galaxy collection install -r ansible/requirements.yml   # ansible.posix + community.general
 ```
 
 SSH access as `foo` (kickstart-created user, root login locked) with `~/.ssh/id_ed25519_homelab` — both

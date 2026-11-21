@@ -1,3 +1,4 @@
+---
 # Bootstrap issuer - exists only to sign the root CA certificate below, not
 # used by any Ingress directly.
 apiVersion: cert-manager.io/v1

@@ -1,3 +1,4 @@
+---
 # The metallb Helm chart (metallb.yml) installs the controller/speaker but
 # not an IP pool - MetalLB won't hand out any LoadBalancer IPs without this.
 # Range is the tail of the Opal's DHCP pool (10.10.10.2-249, see
